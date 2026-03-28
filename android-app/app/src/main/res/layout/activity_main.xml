@@ -65,7 +65,7 @@
                     android:id="@+id/etServerUrl"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="https://your-server.onrender.com"
+                    android:hint="https://phone-monitor-admin-production.up.railway.app"
                     android:inputType="textUri"
                     android:layout_marginBottom="12dp"/>
 
