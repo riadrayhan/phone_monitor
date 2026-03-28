@@ -58,7 +58,8 @@ public class MonitoringService extends Service {
     private static final int AUDIO_CHANNELS = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT;
 
-    // App usage tracking
+    // App usage tracking (delta tracking)
+    private final Map<String, Long> lastUsageValues = new HashMap<>();
     private final Handler usageHandler = new Handler(Looper.getMainLooper());
     private final Runnable usageRunnable = new Runnable() {
         @Override
@@ -242,7 +243,8 @@ public class MonitoringService extends Service {
         audioRecord.startRecording();
         isStreaming = true;
 
-        final int chunkSize = SAMPLE_RATE; // 500ms of 16-bit mono = 16000 bytes
+        // ~250ms chunks for low-latency streaming (16kHz * 2 bytes * 0.25s = 8000 bytes)
+        final int chunkSize = SAMPLE_RATE / 2;
 
         audioThread = new Thread(() -> {
             byte[] buffer = new byte[chunkSize];
@@ -391,14 +393,24 @@ public class MonitoringService extends Service {
             if (stats == null || stats.isEmpty()) return;
 
             for (UsageStats us : stats) {
-                if (us.getTotalTimeInForeground() <= 0) continue;
+                long totalFg = us.getTotalTimeInForeground();
+                if (totalFg <= 0) continue;
+
+                String pkg = us.getPackageName();
+                long previousValue = lastUsageValues.containsKey(pkg) ? lastUsageValues.get(pkg) : 0L;
+                long delta = totalFg - previousValue;
+                lastUsageValues.put(pkg, totalFg);
+
+                // Only send if there's new usage since last check
+                if (delta <= 0) continue;
+
                 try {
                     JSONObject data = new JSONObject();
                     data.put("employeeId",    employeeId);
                     data.put("employeeName",  employeeName);
-                    data.put("packageName",   us.getPackageName());
-                    data.put("appName",       getAppName(us.getPackageName()));
-                    data.put("usageMs",       us.getTotalTimeInForeground());
+                    data.put("packageName",   pkg);
+                    data.put("appName",       getAppName(pkg));
+                    data.put("usageMs",       delta);
                     data.put("lastUsed",      us.getLastTimeUsed());
                     data.put("timestamp",     now);
                     emitEvent("app_usage", data);
