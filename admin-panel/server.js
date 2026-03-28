@@ -1,8 +1,6 @@
 const express        = require('express');
 const http           = require('http');
 const { Server }     = require('socket.io');
-const session        = require('express-session');
-const bcrypt         = require('bcryptjs');
 const path           = require('path');
 const fs             = require('fs-extra');
 const moment         = require('moment');
@@ -31,57 +29,21 @@ const appUsageLogs = new Map();   // employeeId → [ ...events ]
 const voiceLogs    = new Map();   // employeeId → [ ...filenames ]
 const alertsLog    = [];          // global alerts
 
-// Admin credentials (hashed)
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = bcrypt.hashSync('admin123', 10); // change in production!
-
 // ─── Middleware ────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/audio', express.static(AUDIO_DIR)); // serve recorded audio
 
-app.use(session({
-    secret: 'monitor_secret_2024_change_me',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 8 * 60 * 60 * 1000 } // 8 hours
-}));
-
-// ─── Auth middleware ───────────────────────────────────────────
-function requireAuth(req, res, next) {
-    if (req.session && req.session.admin) return next();
-    res.redirect('/login');
-}
-
 // ─── Routes ───────────────────────────────────────────────────
 
-app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
-
-app.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    if (username === ADMIN_USER && bcrypt.compareSync(password, ADMIN_PASS)) {
-        req.session.admin = true;
-        res.redirect('/');
-    } else {
-        res.redirect('/login?error=1');
-    }
-});
-
-app.get('/logout', (req, res) => {
-    req.session.destroy();
-    res.redirect('/login');
-});
-
-app.get('/', requireAuth, (req, res) => {
+app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 // ─── API Endpoints ─────────────────────────────────────────────
 
-app.get('/api/employees', requireAuth, (req, res) => {
+app.get('/api/employees', (req, res) => {
     const list = [];
     employees.forEach((emp, id) => {
         list.push({
@@ -99,12 +61,12 @@ app.get('/api/employees', requireAuth, (req, res) => {
     res.json(list);
 });
 
-app.get('/api/location/:empId', requireAuth, (req, res) => {
+app.get('/api/location/:empId', (req, res) => {
     const logs = locationLogs.get(req.params.empId) || [];
     res.json(logs.slice(-200)); // last 200 points
 });
 
-app.get('/api/appusage/:empId', requireAuth, (req, res) => {
+app.get('/api/appusage/:empId', (req, res) => {
     const logs = appUsageLogs.get(req.params.empId) || [];
 
     // Aggregate: sum usage per app
@@ -122,16 +84,16 @@ app.get('/api/appusage/:empId', requireAuth, (req, res) => {
     res.json(result);
 });
 
-app.get('/api/voice/:empId', requireAuth, (req, res) => {
+app.get('/api/voice/:empId', (req, res) => {
     const files = voiceLogs.get(req.params.empId) || [];
     res.json(files.slice(-50).reverse()); // last 50
 });
 
-app.get('/api/alerts', requireAuth, (req, res) => {
+app.get('/api/alerts', (req, res) => {
     res.json(alertsLog.slice(-100).reverse());
 });
 
-app.get('/api/stats', requireAuth, (req, res) => {
+app.get('/api/stats', (req, res) => {
     let onlineCount = 0;
     employees.forEach(e => { if (e.online) onlineCount++; });
     res.json({
@@ -231,6 +193,12 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ── Real-time audio stream relay ──
+    socket.on('audio_stream', (data) => {
+        // Relay live audio to all admin panels
+        io.emit('audio_stream', data);
+    });
+
     // ── Disconnect ──
     socket.on('disconnect', () => {
         if (socket.employeeId) {
@@ -284,7 +252,7 @@ server.listen(PORT, () => {
 ╔═══════════════════════════════════════╗
 ║  Employee Monitor Admin Panel         ║
 ║  http://localhost:${PORT}               ║
-║  Login: admin / admin123              ║
+║  No login required                    ║
 ╚═══════════════════════════════════════╝
     `);
 });

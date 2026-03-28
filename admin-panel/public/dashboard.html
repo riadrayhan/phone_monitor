@@ -171,6 +171,11 @@
     padding:6px 12px; border:1px solid var(--border); border-radius:6px;
     font-size:13px; background:#fff; cursor:pointer;
   }
+
+  /* ── Live Audio ── */
+  #audioVisualizer { animation: fadeIn .3s; }
+  #liveAudioArea { min-height:200px; }
+  .listen-active { animation: pulse 1.5s infinite; }
 </style>
 </head>
 <body>
@@ -203,9 +208,12 @@
     <div class="nav-item" onclick="showTab('livefeed')">
       <span class="icon">⚡</span> Live Feed
     </div>
+    <div class="nav-item" onclick="showTab('liveaudio')">
+      <span class="icon">🔴</span> Live Audio
+    </div>
   </div>
   <div class="sidebar-footer">
-    <a href="/logout" class="logout-btn">🚪 Logout</a>
+    <span style="font-size:12px;opacity:.5">Admin Panel v1.0</span>
   </div>
 </nav>
 
@@ -350,6 +358,39 @@
       </div>
     </div>
 
+    <!-- ══ LIVE AUDIO ══ -->
+    <div id="tab-liveaudio" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3>🔴 Live Audio Streaming</h3>
+          <select id="liveAudioEmpSel" onchange="onLiveAudioEmpChange()">
+            <option value="">-- Select Device --</option>
+          </select>
+        </div>
+        <div style="padding:24px;text-align:center" id="liveAudioArea">
+          <div style="font-size:64px;margin-bottom:16px">🎧</div>
+          <p style="color:var(--muted);margin-bottom:20px">Select a device to listen to real-time audio</p>
+          <button id="btnListenStart" class="btn-sm btn-primary" style="padding:12px 32px;font-size:15px;display:none" onclick="startListening()">
+            🎧 Start Listening
+          </button>
+          <button id="btnListenStop" class="btn-sm btn-danger" style="padding:12px 32px;font-size:15px;display:none" onclick="stopListening()">
+            ⏹ Stop Listening
+          </button>
+          <div id="audioVisualizer" style="display:none;margin-top:20px">
+            <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px">
+              <div class="pulse" style="width:12px;height:12px;background:#c62828"></div>
+              <span style="font-size:14px;font-weight:600;color:#c62828">LIVE - Listening</span>
+            </div>
+            <canvas id="audioWaveform" width="600" height="100" style="background:#f8f9fa;border-radius:8px;max-width:100%"></canvas>
+            <div id="audioStats" style="margin-top:8px;font-size:12px;color:var(--muted)">
+              Chunks received: <span id="chunkCount">0</span> |
+              Duration: <span id="listenDuration">0:00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /content -->
 </div><!-- /main -->
 
@@ -368,7 +409,7 @@ function showTab(name) {
     if (n.textContent.toLowerCase().includes(name.replace('livefeed','live'))) n.classList.add('active');
   });
   const titles = { dashboard:'Dashboard', employees:'All Employees', location:'Location Tracking',
-    appusage:'App Usage', voice:'Voice Recordings', alerts:'Alerts', livefeed:'Live Feed' };
+    appusage:'App Usage', voice:'Voice Recordings', alerts:'Alerts', livefeed:'Live Feed', liveaudio:'Live Audio' };
   document.getElementById('tabTitle').textContent = titles[name] || name;
 }
 
@@ -411,7 +452,7 @@ async function refreshEmployees() {
   `).join('');
 
   // Populate selectors
-  const selectors = ['locEmpSel','appEmpSel','voiceEmpSel'];
+  const selectors = ['locEmpSel','appEmpSel','voiceEmpSel','liveAudioEmpSel'];
   selectors.forEach(sid => {
     const sel = document.getElementById(sid);
     const cur = sel.value;
@@ -645,6 +686,122 @@ init();
 // Auto-refresh employees every 30s
 setInterval(refreshEmployees, 30000);
 setInterval(refreshStats, 15000);
+
+// ── Live Audio Streaming ─────────────────────────────────────────────
+let audioCtx = null;
+let isListening = false;
+let listeningTo = null;
+let nextPlayTime = 0;
+let chunkCounter = 0;
+let listenStartTime = 0;
+let listenTimer = null;
+let waveformCtx = null;
+
+function onLiveAudioEmpChange() {
+  const empId = document.getElementById('liveAudioEmpSel').value;
+  if (empId) {
+    document.getElementById('btnListenStart').style.display = 'inline-block';
+    document.getElementById('btnListenStop').style.display = 'none';
+    document.getElementById('audioVisualizer').style.display = 'none';
+    if (isListening) stopListening();
+  } else {
+    document.getElementById('btnListenStart').style.display = 'none';
+    document.getElementById('btnListenStop').style.display = 'none';
+    document.getElementById('audioVisualizer').style.display = 'none';
+  }
+}
+
+async function startListening() {
+  const empId = document.getElementById('liveAudioEmpSel').value;
+  if (!empId) return;
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  isListening = true;
+  listeningTo = empId;
+  nextPlayTime = 0;
+  chunkCounter = 0;
+  listenStartTime = Date.now();
+
+  document.getElementById('btnListenStart').style.display = 'none';
+  document.getElementById('btnListenStop').style.display = 'inline-block';
+  document.getElementById('audioVisualizer').style.display = 'block';
+
+  waveformCtx = document.getElementById('audioWaveform').getContext('2d');
+
+  listenTimer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - listenStartTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = (elapsed % 60).toString().padStart(2, '0');
+    document.getElementById('listenDuration').textContent = mins + ':' + secs;
+  }, 1000);
+}
+
+function stopListening() {
+  isListening = false;
+  listeningTo = null;
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  if (listenTimer) { clearInterval(listenTimer); listenTimer = null; }
+
+  document.getElementById('btnListenStart').style.display = 'inline-block';
+  document.getElementById('btnListenStop').style.display = 'none';
+  document.getElementById('audioVisualizer').style.display = 'none';
+}
+
+socket.on('audio_stream', (data) => {
+  if (!isListening || data.employeeId !== listeningTo || !audioCtx) return;
+
+  try {
+    const binary = atob(data.audioChunk);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const int16 = new Int16Array(bytes.buffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
+
+    const audioBuffer = audioCtx.createBuffer(1, float32.length, data.sampleRate || 16000);
+    audioBuffer.getChannelData(0).set(float32);
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+    if (nextPlayTime < now) nextPlayTime = now + 0.05;
+    source.start(nextPlayTime);
+    nextPlayTime += audioBuffer.duration;
+
+    chunkCounter++;
+    document.getElementById('chunkCount').textContent = chunkCounter;
+
+    drawWaveform(float32);
+  } catch(e) {
+    console.error('Audio playback error:', e);
+  }
+});
+
+function drawWaveform(samples) {
+  if (!waveformCtx) return;
+  const canvas = waveformCtx.canvas;
+  const w = canvas.width, h = canvas.height;
+
+  waveformCtx.fillStyle = '#f8f9fa';
+  waveformCtx.fillRect(0, 0, w, h);
+
+  waveformCtx.strokeStyle = '#1a237e';
+  waveformCtx.lineWidth = 1.5;
+  waveformCtx.beginPath();
+
+  const step = Math.max(1, Math.floor(samples.length / w));
+  for (let i = 0; i < w; i++) {
+    const idx = i * step;
+    const val = idx < samples.length ? samples[idx] : 0;
+    const y = (1 - val) * h / 2;
+    if (i === 0) waveformCtx.moveTo(i, y);
+    else waveformCtx.lineTo(i, y);
+  }
+  waveformCtx.stroke();
+}
 </script>
 </body>
 </html>

