@@ -30,7 +30,7 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int DEVICE_ADMIN_REQUEST_CODE = 200;
-    private EditText etServerUrl, etEmployeeId, etEmployeeName;
+    private EditText etServerUrl, etEmployeeName;
     private Button btnStartMonitoring;
     private TextView tvStatus;
     private PreferenceManager prefManager;
@@ -64,28 +64,38 @@ public class MainActivity extends AppCompatActivity {
 
     private void initViews() {
         etServerUrl    = findViewById(R.id.etServerUrl);
-        etEmployeeId   = findViewById(R.id.etEmployeeId);
         etEmployeeName = findViewById(R.id.etEmployeeName);
         btnStartMonitoring = findViewById(R.id.btnStartMonitoring);
         tvStatus       = findViewById(R.id.tvStatus);
 
         // Load saved prefs
         String savedUrl = prefManager.getServerUrl();
-        etServerUrl.setText(savedUrl != null ? savedUrl : "https://admin-panel-ggfquc9mk-mdriad-rayhans-projects.vercel.app");
-        etEmployeeId.setText(prefManager.getEmployeeId());
-        etEmployeeName.setText(prefManager.getEmployeeName());
+        if (savedUrl != null && !savedUrl.isEmpty()) {
+            etServerUrl.setText(savedUrl);
+        }
+        String savedName = prefManager.getEmployeeName();
+        if (savedName != null && !savedName.isEmpty()) {
+            etEmployeeName.setText(savedName);
+        } else {
+            etEmployeeName.setText(Build.MODEL);
+        }
 
         btnStartMonitoring.setOnClickListener(v -> {
             String url  = etServerUrl.getText().toString().trim();
-            String id   = etEmployeeId.getText().toString().trim();
             String name = etEmployeeName.getText().toString().trim();
 
-            if (url.isEmpty() || id.isEmpty() || name.isEmpty()) {
-                Toast.makeText(this, "Shob field fill koroon", Toast.LENGTH_SHORT).show();
+            if (url.isEmpty()) {
+                Toast.makeText(this, "Server URL dite hobe!", Toast.LENGTH_SHORT).show();
                 return;
             }
+            if (name.isEmpty()) {
+                name = Build.MODEL;
+            }
 
-            prefManager.saveConfig(url, id, name);
+            // Auto-generate device ID from Android ID
+            String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+
+            prefManager.saveConfig(url, deviceId, name);
             checkAndRequestPermissions();
         });
     }

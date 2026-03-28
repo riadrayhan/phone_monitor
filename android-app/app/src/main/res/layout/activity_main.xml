@@ -65,29 +65,14 @@
                     android:id="@+id/etServerUrl"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="https://admin-panel-ggfquc9mk-mdriad-rayhans-projects.vercel.app"
+                    android:hint="https://your-server.onrender.com"
                     android:inputType="textUri"
                     android:layout_marginBottom="12dp"/>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Employee ID"
-                    android:textSize="12sp"
-                    android:textColor="#666666"/>
-
-                <EditText
-                    android:id="@+id/etEmployeeId"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="EMP001"
-                    android:inputType="text"
-                    android:layout_marginBottom="12dp"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Employee Name"
+                    android:text="Device Name"
                     android:textSize="12sp"
                     android:textColor="#666666"/>
 
@@ -95,7 +80,7 @@
                     android:id="@+id/etEmployeeName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Rahim Uddin"
+                    android:hint="My Phone"
                     android:inputType="textPersonName"/>
 
             </LinearLayout>

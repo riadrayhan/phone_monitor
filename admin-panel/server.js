@@ -4,20 +4,17 @@ const { Server }     = require('socket.io');
 const path           = require('path');
 const fs             = require('fs-extra');
 
-const IS_VERCEL = !!process.env.VERCEL;
 const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, {
     cors: { origin: '*', methods: ['GET','POST'] },
-    maxHttpBufferSize: 50e6,  // 50 MB for audio
-    transports: IS_VERCEL ? ['polling'] : ['polling', 'websocket']
+    maxHttpBufferSize: 50e6
 });
 
 const PORT = process.env.PORT || 3000;
 
 // ─── Directories ───────────────────────────────────────────────
-const BASE_DIR   = IS_VERCEL ? '/tmp' : __dirname;
-const DATA_DIR   = path.join(BASE_DIR, 'data');
+const DATA_DIR   = path.join(__dirname, 'data');
 const AUDIO_DIR  = path.join(DATA_DIR, 'audio');
 const LOGS_DIR   = path.join(DATA_DIR, 'logs');
 try { fs.ensureDirSync(DATA_DIR); fs.ensureDirSync(AUDIO_DIR); fs.ensureDirSync(LOGS_DIR); }
@@ -268,17 +265,11 @@ async function appendToLog(employeeId, type, data) {
 
 // ─── Start ────────────────────────────────────────────────────
 
-if (!IS_VERCEL) {
-    server.listen(PORT, () => {
-        console.log(`
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`
 ╔═══════════════════════════════════════╗
 ║  Employee Monitor Admin Panel         ║
-║  http://localhost:${PORT}               ║
-║  No login required                    ║
+║  Running on port ${PORT}                ║
 ╚═══════════════════════════════════════╝
-        `);
-    });
-}
-
-// Export for Vercel
-module.exports = app;
+    `);
+});
