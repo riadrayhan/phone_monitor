@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Monitor" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#1A237E</item>
+        <item name="colorPrimaryVariant">#283593</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#3949AB</item>
+        <item name="android:statusBarColor">#1A237E</item>
+    </style>
+</resources>

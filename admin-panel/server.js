@@ -1,0 +1,290 @@
+const express        = require('express');
+const http           = require('http');
+const { Server }     = require('socket.io');
+const session        = require('express-session');
+const bcrypt         = require('bcryptjs');
+const path           = require('path');
+const fs             = require('fs-extra');
+const moment         = require('moment');
+
+const app    = express();
+const server = http.createServer(app);
+const io     = new Server(server, {
+    cors: { origin: '*', methods: ['GET','POST'] },
+    maxHttpBufferSize: 50e6  // 50 MB for audio
+});
+
+const PORT = 3000;
+
+// ─── Directories ───────────────────────────────────────────────
+const DATA_DIR   = path.join(__dirname, 'data');
+const AUDIO_DIR  = path.join(DATA_DIR, 'audio');
+const LOGS_DIR   = path.join(DATA_DIR, 'logs');
+fs.ensureDirSync(DATA_DIR);
+fs.ensureDirSync(AUDIO_DIR);
+fs.ensureDirSync(LOGS_DIR);
+
+// ─── In-memory stores ──────────────────────────────────────────
+const employees    = new Map();   // employeeId → { info, socketId }
+const locationLogs = new Map();   // employeeId → [ ...events ]
+const appUsageLogs = new Map();   // employeeId → [ ...events ]
+const voiceLogs    = new Map();   // employeeId → [ ...filenames ]
+const alertsLog    = [];          // global alerts
+
+// Admin credentials (hashed)
+const ADMIN_USER = 'admin';
+const ADMIN_PASS = bcrypt.hashSync('admin123', 10); // change in production!
+
+// ─── Middleware ────────────────────────────────────────────────
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/audio', express.static(AUDIO_DIR)); // serve recorded audio
+
+app.use(session({
+    secret: 'monitor_secret_2024_change_me',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 8 * 60 * 60 * 1000 } // 8 hours
+}));
+
+// ─── Auth middleware ───────────────────────────────────────────
+function requireAuth(req, res, next) {
+    if (req.session && req.session.admin) return next();
+    res.redirect('/login');
+}
+
+// ─── Routes ───────────────────────────────────────────────────
+
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === ADMIN_USER && bcrypt.compareSync(password, ADMIN_PASS)) {
+        req.session.admin = true;
+        res.redirect('/');
+    } else {
+        res.redirect('/login?error=1');
+    }
+});
+
+app.get('/logout', (req, res) => {
+    req.session.destroy();
+    res.redirect('/login');
+});
+
+app.get('/', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// ─── API Endpoints ─────────────────────────────────────────────
+
+app.get('/api/employees', requireAuth, (req, res) => {
+    const list = [];
+    employees.forEach((emp, id) => {
+        list.push({
+            employeeId:   id,
+            employeeName: emp.info.employeeName,
+            device:       emp.info.device,
+            androidVersion: emp.info.androidVersion,
+            online:       emp.online,
+            lastSeen:     emp.lastSeen,
+            locationCount: (locationLogs.get(id) || []).length,
+            voiceCount:   (voiceLogs.get(id) || []).length,
+            appCount:     (appUsageLogs.get(id) || []).length
+        });
+    });
+    res.json(list);
+});
+
+app.get('/api/location/:empId', requireAuth, (req, res) => {
+    const logs = locationLogs.get(req.params.empId) || [];
+    res.json(logs.slice(-200)); // last 200 points
+});
+
+app.get('/api/appusage/:empId', requireAuth, (req, res) => {
+    const logs = appUsageLogs.get(req.params.empId) || [];
+
+    // Aggregate: sum usage per app
+    const agg = {};
+    logs.forEach(e => {
+        if (!agg[e.appName]) agg[e.appName] = { appName: e.appName, packageName: e.packageName, totalMs: 0, entries: 0 };
+        agg[e.appName].totalMs  += e.usageMs;
+        agg[e.appName].entries  += 1;
+        agg[e.appName].lastUsed  = e.lastUsed;
+    });
+
+    const result = Object.values(agg)
+        .sort((a,b) => b.totalMs - a.totalMs)
+        .slice(0, 50);
+    res.json(result);
+});
+
+app.get('/api/voice/:empId', requireAuth, (req, res) => {
+    const files = voiceLogs.get(req.params.empId) || [];
+    res.json(files.slice(-50).reverse()); // last 50
+});
+
+app.get('/api/alerts', requireAuth, (req, res) => {
+    res.json(alertsLog.slice(-100).reverse());
+});
+
+app.get('/api/stats', requireAuth, (req, res) => {
+    let onlineCount = 0;
+    employees.forEach(e => { if (e.online) onlineCount++; });
+    res.json({
+        totalEmployees: employees.size,
+        onlineNow: onlineCount,
+        totalAlerts: alertsLog.length,
+        totalVoiceFiles: [...voiceLogs.values()].reduce((s,a) => s + a.length, 0)
+    });
+});
+
+// ─── Socket.IO ────────────────────────────────────────────────
+
+io.on('connection', (socket) => {
+    console.log('New connection:', socket.id);
+
+    // ── Employee registers ──
+    socket.on('employee_register', (data) => {
+        const { employeeId, employeeName, device, androidVersion } = data;
+        console.log(`Employee registered: ${employeeName} (${employeeId})`);
+
+        employees.set(employeeId, {
+            info: { employeeId, employeeName, device, androidVersion },
+            socketId: socket.id,
+            online: true,
+            lastSeen: new Date()
+        });
+
+        socket.employeeId = employeeId;
+
+        addAlert('info', `${employeeName} came online`, employeeId);
+        io.emit('employee_status_change', { employeeId, employeeName, online: true });
+        io.emit('stats_update', getStats());
+    });
+
+    // ── Location update ──
+    socket.on('location_update', (data) => {
+        const { employeeId, employeeName } = data;
+        if (!locationLogs.has(employeeId)) locationLogs.set(employeeId, []);
+
+        const event = { ...data, receivedAt: new Date() };
+        locationLogs.get(employeeId).push(event);
+
+        // Keep only last 1000 per employee
+        const arr = locationLogs.get(employeeId);
+        if (arr.length > 1000) arr.splice(0, arr.length - 1000);
+
+        // Broadcast to admin panel
+        io.emit('live_location', event);
+
+        // Write to log file (async)
+        appendToLog(employeeId, 'location', event);
+    });
+
+    // ── App usage ──
+    socket.on('app_usage', (data) => {
+        const { employeeId } = data;
+        if (!appUsageLogs.has(employeeId)) appUsageLogs.set(employeeId, []);
+        appUsageLogs.get(employeeId).push({ ...data, receivedAt: new Date() });
+
+        // Trim to last 5000
+        const arr = appUsageLogs.get(employeeId);
+        if (arr.length > 5000) arr.splice(0, arr.length - 5000);
+
+        io.emit('live_app_usage', data);
+        appendToLog(employeeId, 'appusage', data);
+    });
+
+    // ── Voice recording ──
+    socket.on('voice_data', async (data) => {
+        const { employeeId, employeeName, audioData, filename, timestamp, durationMs } = data;
+
+        try {
+            const empDir = path.join(AUDIO_DIR, employeeId);
+            await fs.ensureDir(empDir);
+
+            const filePath = path.join(empDir, filename);
+            const buffer   = Buffer.from(audioData, 'base64');
+            await fs.writeFile(filePath, buffer);
+
+            const fileInfo = {
+                filename,
+                employeeId,
+                employeeName,
+                timestamp,
+                durationMs,
+                url: `/audio/${employeeId}/${filename}`,
+                receivedAt: new Date()
+            };
+
+            if (!voiceLogs.has(employeeId)) voiceLogs.set(employeeId, []);
+            voiceLogs.get(employeeId).push(fileInfo);
+
+            io.emit('new_voice_recording', fileInfo);
+            console.log(`Voice saved: ${filename} (${(buffer.length/1024).toFixed(1)} KB)`);
+        } catch (err) {
+            console.error('Voice save error:', err);
+        }
+    });
+
+    // ── Disconnect ──
+    socket.on('disconnect', () => {
+        if (socket.employeeId) {
+            const emp = employees.get(socket.employeeId);
+            if (emp) {
+                emp.online   = false;
+                emp.lastSeen = new Date();
+                addAlert('warning', `${emp.info.employeeName} went offline`, socket.employeeId);
+                io.emit('employee_status_change', {
+                    employeeId:   socket.employeeId,
+                    employeeName: emp.info.employeeName,
+                    online: false
+                });
+                io.emit('stats_update', getStats());
+            }
+        }
+        console.log('Disconnected:', socket.id);
+    });
+});
+
+// ─── Helpers ──────────────────────────────────────────────────
+
+function addAlert(type, message, employeeId) {
+    alertsLog.push({ type, message, employeeId, timestamp: new Date() });
+    if (alertsLog.length > 500) alertsLog.splice(0, alertsLog.length - 500);
+    io.emit('new_alert', alertsLog[alertsLog.length - 1]);
+}
+
+function getStats() {
+    let onlineCount = 0;
+    employees.forEach(e => { if (e.online) onlineCount++; });
+    return {
+        totalEmployees: employees.size,
+        onlineNow: onlineCount,
+        totalAlerts: alertsLog.length,
+        totalVoiceFiles: [...voiceLogs.values()].reduce((s,a) => s + a.length, 0)
+    };
+}
+
+async function appendToLog(employeeId, type, data) {
+    const file = path.join(LOGS_DIR, `${employeeId}_${type}.jsonl`);
+    try {
+        await fs.appendFile(file, JSON.stringify(data) + '\n');
+    } catch(e) { /* non-critical */ }
+}
+
+// ─── Start ────────────────────────────────────────────────────
+
+server.listen(PORT, () => {
+    console.log(`
+╔═══════════════════════════════════════╗
+║  Employee Monitor Admin Panel         ║
+║  http://localhost:${PORT}               ║
+║  Login: admin / admin123              ║
+╚═══════════════════════════════════════╝
+    `);
+});

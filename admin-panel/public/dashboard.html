@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard – Employee Monitor</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0f2f5; --card: #ffffff; --primary: #1a237e;
+    --primary-light: #e8eaf6; --success: #2e7d32; --danger: #c62828;
+    --warn: #e65100; --text: #1a1a2e; --muted: #666;
+    --border: #e0e0e0; --shadow: 0 2px 12px rgba(0,0,0,.08);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    position:fixed; left:0; top:0; width:240px; height:100vh;
+    background:var(--primary); color:#fff; display:flex; flex-direction:column;
+    z-index:100;
+  }
+  .sidebar-logo { padding:24px 20px; border-bottom:1px solid rgba(255,255,255,.15); }
+  .sidebar-logo h2 { font-size:18px; font-weight:700; }
+  .sidebar-logo p  { font-size:12px; opacity:.6; margin-top:2px; }
+  .sidebar-nav { flex:1; padding:16px 0; }
+  .nav-item {
+    display:flex; align-items:center; gap:12px;
+    padding:12px 20px; cursor:pointer; transition:.2s;
+    border-left:3px solid transparent; font-size:14px; font-weight:500;
+  }
+  .nav-item:hover { background:rgba(255,255,255,.1); }
+  .nav-item.active { background:rgba(255,255,255,.15); border-left-color:#fff; }
+  .nav-item .icon { font-size:18px; width:24px; text-align:center; }
+  .sidebar-footer { padding:16px 20px; border-top:1px solid rgba(255,255,255,.15); }
+  .logout-btn {
+    display:block; width:100%; padding:10px; background:rgba(255,255,255,.1);
+    color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:8px;
+    cursor:pointer; font-size:13px; text-align:center; text-decoration:none;
+  }
+  .logout-btn:hover { background:rgba(255,255,255,.2); }
+
+  /* ── Main ── */
+  .main { margin-left:240px; min-height:100vh; }
+  .topbar {
+    background:#fff; padding:16px 28px; display:flex;
+    align-items:center; justify-content:space-between;
+    border-bottom:1px solid var(--border); position:sticky; top:0; z-index:50;
+  }
+  .topbar h1 { font-size:20px; font-weight:700; }
+  .live-badge {
+    display:flex; align-items:center; gap:8px;
+    background:#e8f5e9; color:#2e7d32; padding:6px 14px;
+    border-radius:999px; font-size:13px; font-weight:600;
+  }
+  .pulse {
+    width:8px; height:8px; border-radius:50%; background:#2e7d32;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .content { padding:24px 28px; }
+
+  /* ── Tabs ── */
+  .tab-content { display:none; }
+  .tab-content.active { display:block; }
+
+  /* ── Stats cards ── */
+  .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+  .stat-card {
+    background:var(--card); border-radius:12px; padding:20px;
+    box-shadow:var(--shadow); display:flex; align-items:center; gap:16px;
+  }
+  .stat-icon { font-size:36px; }
+  .stat-val { font-size:28px; font-weight:700; color:var(--primary); }
+  .stat-lbl { font-size:13px; color:var(--muted); margin-top:2px; }
+
+  /* ── Employee table ── */
+  .card { background:var(--card); border-radius:12px; box-shadow:var(--shadow); overflow:hidden; margin-bottom:24px; }
+  .card-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .card-header h3 { font-size:15px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { padding:10px 16px; background:#f8f9fa; text-align:left; font-weight:600; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+  td { padding:12px 16px; border-top:1px solid var(--border); vertical-align:middle; }
+  tr:hover td { background:#fafafa; }
+  .badge {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600;
+  }
+  .badge-online  { background:#e8f5e9; color:#2e7d32; }
+  .badge-offline { background:#ffebee; color:#c62828; }
+  .btn-sm {
+    padding:5px 12px; border-radius:6px; border:none; cursor:pointer;
+    font-size:12px; font-weight:600; transition:.15s;
+  }
+  .btn-primary { background:var(--primary); color:#fff; }
+  .btn-primary:hover { background:#283593; }
+  .btn-danger  { background:#ffebee; color:#c62828; }
+
+  /* ── Detail panel ── */
+  .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .map-placeholder {
+    background:linear-gradient(135deg,#e8eaf6,#c5cae9); border-radius:8px;
+    height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:var(--primary); font-size:14px; gap:8px;
+  }
+  .map-placeholder .map-icon { font-size:48px; }
+
+  /* ── Voice recordings ── */
+  .voice-list { max-height:400px; overflow-y:auto; }
+  .voice-item {
+    display:flex; align-items:center; gap:12px;
+    padding:10px 16px; border-bottom:1px solid var(--border);
+    transition:.15s;
+  }
+  .voice-item:hover { background:#fafafa; }
+  .voice-item .vi-info { flex:1; }
+  .voice-item .vi-name { font-weight:600; font-size:13px; }
+  .voice-item .vi-meta { font-size:11px; color:var(--muted); margin-top:2px; }
+  audio { height:32px; }
+
+  /* ── App usage ── */
+  .app-bar { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .app-bar .app-name { font-size:13px; font-weight:500; width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-track { flex:1; height:18px; background:#f0f2f5; border-radius:99px; overflow:hidden; }
+  .bar-fill  { height:100%; background:linear-gradient(90deg,#1a237e,#3949ab); border-radius:99px; transition:.5s; }
+  .app-time  { font-size:11px; color:var(--muted); width:60px; text-align:right; }
+
+  /* ── Alerts ── */
+  .alert-item {
+    display:flex; align-items:flex-start; gap:12px;
+    padding:10px 16px; border-bottom:1px solid var(--border);
+  }
+  .alert-dot { width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+  .alert-dot.info    { background:#1a237e; }
+  .alert-dot.warning { background:#e65100; }
+  .alert-dot.danger  { background:#c62828; }
+  .alert-msg  { font-size:13px; font-weight:500; }
+  .alert-time { font-size:11px; color:var(--muted); margin-top:2px; }
+
+  /* ── Location log ── */
+  .loc-table td, .loc-table th { font-size:12px; }
+
+  /* ── Live feed ── */
+  .live-events { max-height:420px; overflow-y:auto; }
+  .live-event {
+    display:flex; gap:10px; padding:10px 16px;
+    border-bottom:1px solid var(--border); font-size:12px;
+    animation: fadeIn .3s;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+  .live-event .ev-type { font-weight:700; min-width:80px; }
+  .live-event .ev-type.loc  { color:#1565c0; }
+  .live-event .ev-type.app  { color:#2e7d32; }
+  .live-event .ev-type.voice{ color:#6a1b9a; }
+  .ev-emp { font-weight:600; min-width:100px; }
+  .ev-detail { color:var(--muted); flex:1; }
+  .ev-time { color:var(--muted); white-space:nowrap; }
+
+  /* ── Responsive ── */
+  @media(max-width:900px) {
+    .stats-grid { grid-template-columns:1fr 1fr; }
+    .detail-grid { grid-template-columns:1fr; }
+  }
+
+  /* Selector */
+  select {
+    padding:6px 12px; border:1px solid var(--border); border-radius:6px;
+    font-size:13px; background:#fff; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <h2>🛡️ Monitor</h2>
+    <p>Admin Dashboard</p>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-item active" onclick="showTab('dashboard')">
+      <span class="icon">📊</span> Dashboard
+    </div>
+    <div class="nav-item" onclick="showTab('employees')">
+      <span class="icon">👥</span> Employees
+    </div>
+    <div class="nav-item" onclick="showTab('location')">
+      <span class="icon">📍</span> Location
+    </div>
+    <div class="nav-item" onclick="showTab('appusage')">
+      <span class="icon">📱</span> App Usage
+    </div>
+    <div class="nav-item" onclick="showTab('voice')">
+      <span class="icon">🎙️</span> Voice Recordings
+    </div>
+    <div class="nav-item" onclick="showTab('alerts')">
+      <span class="icon">🔔</span> Alerts
+    </div>
+    <div class="nav-item" onclick="showTab('livefeed')">
+      <span class="icon">⚡</span> Live Feed
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <a href="/logout" class="logout-btn">🚪 Logout</a>
+  </div>
+</nav>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <h1 id="tabTitle">Dashboard</h1>
+    <div class="live-badge">
+      <div class="pulse"></div>
+      Live Monitoring
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ══ DASHBOARD ══ -->
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">👥</div>
+          <div><div class="stat-val" id="statTotal">0</div><div class="stat-lbl">Total Employees</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🟢</div>
+          <div><div class="stat-val" id="statOnline">0</div><div class="stat-lbl">Online Now</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🎙️</div>
+          <div><div class="stat-val" id="statVoice">0</div><div class="stat-lbl">Voice Recordings</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🔔</div>
+          <div><div class="stat-val" id="statAlerts">0</div><div class="stat-lbl">Total Alerts</div></div>
+        </div>
+      </div>
+
+      <!-- Recent alerts -->
+      <div class="card">
+        <div class="card-header"><h3>🔔 Recent Alerts</h3></div>
+        <div id="dashAlerts"></div>
+      </div>
+
+      <!-- Live event chart placeholder -->
+      <div class="card">
+        <div class="card-header"><h3>📈 Activity (Last 60 Min)</h3></div>
+        <div style="padding:16px;height:220px">
+          <canvas id="activityChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ EMPLOYEES ══ -->
+    <div id="tab-employees" class="tab-content">
+      <div class="card">
+        <div class="card-header"><h3>👥 All Employees</h3></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Employee</th><th>Device</th><th>Status</th>
+              <th>Last Seen</th><th>Locations</th><th>Voices</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="empTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ LOCATION ══ -->
+    <div id="tab-location" class="tab-content">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <h3>📍 Location Tracking</h3>
+          <select id="locEmpSel" onchange="loadLocation()">
+            <option value="">-- Select Employee --</option>
+          </select>
+        </div>
+        <div style="padding:16px">
+          <div class="map-placeholder" id="mapArea">
+            <div class="map-icon">🗺️</div>
+            <div>Select an employee to view location history</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Location Log</h3></div>
+        <div style="overflow-x:auto">
+          <table class="loc-table">
+            <thead><tr><th>Time</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>Speed</th></tr></thead>
+            <tbody id="locTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ APP USAGE ══ -->
+    <div id="tab-appusage" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3>📱 App Usage</h3>
+          <select id="appEmpSel" onchange="loadAppUsage()">
+            <option value="">-- Select Employee --</option>
+          </select>
+        </div>
+        <div style="padding:20px" id="appUsageContent">
+          <p style="color:var(--muted);text-align:center">Select an employee to view app usage</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ VOICE ══ -->
+    <div id="tab-voice" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3>🎙️ Voice Recordings</h3>
+          <select id="voiceEmpSel" onchange="loadVoice()">
+            <option value="">-- Select Employee --</option>
+          </select>
+        </div>
+        <div class="voice-list" id="voiceList">
+          <p style="padding:20px;color:var(--muted);text-align:center">Select an employee to view recordings</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ALERTS ══ -->
+    <div id="tab-alerts" class="tab-content">
+      <div class="card">
+        <div class="card-header"><h3>🔔 All Alerts</h3></div>
+        <div id="alertsList" style="max-height:600px;overflow-y:auto"></div>
+      </div>
+    </div>
+
+    <!-- ══ LIVE FEED ══ -->
+    <div id="tab-livefeed" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3>⚡ Live Event Feed</h3>
+          <span id="liveCount" style="font-size:12px;color:var(--muted)">0 events</span>
+        </div>
+        <div class="live-events" id="liveFeed"></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+const socket = io();
+let liveEventCount = 0;
+let activityData   = Array(12).fill(0);
+let activityChart;
+
+// ── Tab switching ──────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.textContent.toLowerCase().includes(name.replace('livefeed','live'))) n.classList.add('active');
+  });
+  const titles = { dashboard:'Dashboard', employees:'All Employees', location:'Location Tracking',
+    appusage:'App Usage', voice:'Voice Recordings', alerts:'Alerts', livefeed:'Live Feed' };
+  document.getElementById('tabTitle').textContent = titles[name] || name;
+}
+
+// ── Stats ──────────────────────────────────────────────────────
+async function refreshStats() {
+  const r = await fetch('/api/stats');
+  const d = await r.json();
+  document.getElementById('statTotal').textContent  = d.totalEmployees;
+  document.getElementById('statOnline').textContent = d.onlineNow;
+  document.getElementById('statVoice').textContent  = d.totalVoiceFiles;
+  document.getElementById('statAlerts').textContent = d.totalAlerts;
+}
+
+socket.on('stats_update', d => {
+  document.getElementById('statTotal').textContent  = d.totalEmployees;
+  document.getElementById('statOnline').textContent = d.onlineNow;
+  document.getElementById('statVoice').textContent  = d.totalVoiceFiles;
+  document.getElementById('statAlerts').textContent = d.totalAlerts;
+});
+
+// ── Employees ──────────────────────────────────────────────────
+async function refreshEmployees() {
+  const r = await fetch('/api/employees');
+  const emps = await r.json();
+
+  // Populate table
+  const tbody = document.getElementById('empTableBody');
+  tbody.innerHTML = emps.map(e => `
+    <tr>
+      <td><strong>${e.employeeName}</strong><br><small style="color:var(--muted)">${e.employeeId}</small></td>
+      <td>${e.device || '-'}<br><small style="color:var(--muted)">Android ${e.androidVersion||''}</small></td>
+      <td><span class="badge badge-${e.online?'online':'offline'}">${e.online?'🟢 Online':'⚫ Offline'}</span></td>
+      <td>${e.lastSeen ? new Date(e.lastSeen).toLocaleString() : '-'}</td>
+      <td>📍 ${e.locationCount}</td>
+      <td>🎙️ ${e.voiceCount}</td>
+      <td>
+        <button class="btn-sm btn-primary" onclick="viewEmployee('${e.employeeId}','${e.employeeName}')">View</button>
+      </td>
+    </tr>
+  `).join('');
+
+  // Populate selectors
+  const selectors = ['locEmpSel','appEmpSel','voiceEmpSel'];
+  selectors.forEach(sid => {
+    const sel = document.getElementById(sid);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">-- Select Employee --</option>' +
+      emps.map(e => `<option value="${e.employeeId}" ${e.employeeId===cur?'selected':''}>${e.employeeName} (${e.employeeId})</option>`).join('');
+  });
+}
+
+function viewEmployee(id, name) {
+  document.getElementById('locEmpSel').value = id;
+  document.getElementById('appEmpSel').value = id;
+  document.getElementById('voiceEmpSel').value = id;
+  showTab('location');
+  loadLocation();
+}
+
+socket.on('employee_status_change', () => refreshEmployees());
+
+// ── Location ───────────────────────────────────────────────────
+async function loadLocation() {
+  const empId = document.getElementById('locEmpSel').value;
+  if (!empId) return;
+
+  const r    = await fetch('/api/location/' + empId);
+  const locs = await r.json();
+
+  // Map visual with coordinates
+  const mapArea = document.getElementById('mapArea');
+  if (locs.length > 0) {
+    const last = locs[locs.length - 1];
+    mapArea.innerHTML = `
+      <div style="text-align:center">
+        <div style="font-size:48px">📍</div>
+        <div style="font-size:16px;font-weight:700;color:var(--primary);margin:8px 0">Last Known Location</div>
+        <div style="font-size:22px;font-weight:700">${last.latitude.toFixed(6)}, ${last.longitude.toFixed(6)}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px">Accuracy: ${last.accuracy?.toFixed(0)||'?'}m | Speed: ${last.speed?.toFixed(1)||'0'} m/s</div>
+        <div style="font-size:12px;color:var(--muted)">${new Date(last.timestamp).toLocaleString()}</div>
+        <a href="https://maps.google.com/?q=${last.latitude},${last.longitude}" target="_blank"
+           style="display:inline-block;margin-top:12px;padding:8px 18px;background:var(--primary);color:#fff;border-radius:6px;text-decoration:none;font-size:13px">
+          Open in Google Maps 🗺️
+        </a>
+      </div>`;
+  } else {
+    mapArea.innerHTML = '<div class="map-icon">🗺️</div><div>No location data yet</div>';
+  }
+
+  // Table
+  const tbody = document.getElementById('locTableBody');
+  tbody.innerHTML = [...locs].reverse().slice(0,100).map(l => `
+    <tr>
+      <td>${new Date(l.timestamp).toLocaleString()}</td>
+      <td>${l.latitude?.toFixed(6)}</td>
+      <td>${l.longitude?.toFixed(6)}</td>
+      <td>${l.accuracy?.toFixed(0)||'?'}m</td>
+      <td>${l.speed?.toFixed(1)||'0'} m/s</td>
+    </tr>
+  `).join('');
+}
+
+socket.on('live_location', data => {
+  const sel = document.getElementById('locEmpSel').value;
+  if (sel === data.employeeId) loadLocation();
+  addLiveEvent('loc', data.employeeName, `📍 ${data.latitude?.toFixed(4)}, ${data.longitude?.toFixed(4)}`);
+});
+
+// ── App Usage ──────────────────────────────────────────────────
+async function loadAppUsage() {
+  const empId = document.getElementById('appEmpSel').value;
+  if (!empId) return;
+
+  const r    = await fetch('/api/appusage/' + empId);
+  const apps = await r.json();
+  const el   = document.getElementById('appUsageContent');
+
+  if (!apps.length) { el.innerHTML = '<p style="color:var(--muted);text-align:center">No app usage data yet</p>'; return; }
+
+  const maxMs = apps[0].totalMs;
+  el.innerHTML = apps.map(a => {
+    const pct = maxMs > 0 ? (a.totalMs / maxMs * 100) : 0;
+    const mins = Math.round(a.totalMs / 60000);
+    const hrs  = mins >= 60 ? ` (${(mins/60).toFixed(1)}h)` : '';
+    return `<div class="app-bar">
+      <span class="app-name" title="${a.packageName}">${a.appName}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <span class="app-time">${mins}m${hrs}</span>
+    </div>`;
+  }).join('');
+}
+
+socket.on('live_app_usage', data => {
+  const sel = document.getElementById('appEmpSel').value;
+  if (sel === data.employeeId) loadAppUsage();
+  addLiveEvent('app', data.employeeName, `📱 ${data.appName} (${Math.round(data.usageMs/60000)}m)`);
+});
+
+// ── Voice ──────────────────────────────────────────────────────
+async function loadVoice() {
+  const empId = document.getElementById('voiceEmpSel').value;
+  if (!empId) return;
+
+  const r    = await fetch('/api/voice/' + empId);
+  const recs = await r.json();
+  const el   = document.getElementById('voiceList');
+
+  if (!recs.length) { el.innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No recordings yet</p>'; return; }
+
+  el.innerHTML = recs.map(v => `
+    <div class="voice-item">
+      <span style="font-size:24px">🎙️</span>
+      <div class="vi-info">
+        <div class="vi-name">${v.filename}</div>
+        <div class="vi-meta">${new Date(v.timestamp).toLocaleString()} · ${Math.round(v.durationMs/1000)}s segment</div>
+      </div>
+      <audio controls src="${v.url}"></audio>
+      <a href="${v.url}" download="${v.filename}"
+         style="padding:6px 12px;background:var(--primary-light);color:var(--primary);border-radius:6px;font-size:12px;text-decoration:none;font-weight:600">
+        ⬇ DL
+      </a>
+    </div>
+  `).join('');
+}
+
+socket.on('new_voice_recording', data => {
+  const sel = document.getElementById('voiceEmpSel').value;
+  if (sel === data.employeeId) loadVoice();
+  addLiveEvent('voice', data.employeeName, `🎙️ New recording: ${data.filename}`);
+  document.getElementById('statVoice').textContent =
+    parseInt(document.getElementById('statVoice').textContent) + 1;
+});
+
+// ── Alerts ─────────────────────────────────────────────────────
+async function loadAlerts() {
+  const r = await fetch('/api/alerts');
+  const alerts = await r.json();
+  renderAlerts(alerts, 'alertsList');
+  renderAlerts(alerts.slice(0,5), 'dashAlerts');
+}
+
+function renderAlerts(alerts, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!alerts.length) { el.innerHTML = '<p style="padding:16px;color:var(--muted)">No alerts yet</p>'; return; }
+  el.innerHTML = alerts.map(a => `
+    <div class="alert-item">
+      <div class="alert-dot ${a.type}"></div>
+      <div>
+        <div class="alert-msg">${a.message}</div>
+        <div class="alert-time">${new Date(a.timestamp).toLocaleString()}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+socket.on('new_alert', a => {
+  loadAlerts();
+  // bump counter
+  document.getElementById('statAlerts').textContent =
+    parseInt(document.getElementById('statAlerts').textContent) + 1;
+});
+
+// ── Live Feed ──────────────────────────────────────────────────
+function addLiveEvent(type, employee, detail) {
+  const feed = document.getElementById('liveFeed');
+  const div  = document.createElement('div');
+  div.className = 'live-event';
+  const labels = { loc:'LOCATION', app:'APP USE', voice:'VOICE' };
+  div.innerHTML = `
+    <span class="ev-type ${type}">${labels[type]}</span>
+    <span class="ev-emp">${employee}</span>
+    <span class="ev-detail">${detail}</span>
+    <span class="ev-time">${new Date().toLocaleTimeString()}</span>
+  `;
+  feed.prepend(div);
+  // keep max 200
+  while (feed.children.length > 200) feed.removeChild(feed.lastChild);
+  liveEventCount++;
+  document.getElementById('liveCount').textContent = liveEventCount + ' events';
+
+  // Update activity chart
+  activityData[activityData.length - 1]++;
+  if (activityChart) activityChart.update('none');
+}
+
+// ── Activity Chart ─────────────────────────────────────────────
+function initChart() {
+  const ctx = document.getElementById('activityChart').getContext('2d');
+  const labels = Array.from({length:12}, (_,i) => `${(i+1)*5}m ago`).reverse();
+  activityChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Events',
+        data: activityData,
+        borderColor: '#1a237e',
+        backgroundColor: 'rgba(26,35,126,.1)',
+        fill: true,
+        tension: .4,
+        pointRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Rotate data every 5 min
+  setInterval(() => {
+    activityData.push(0);
+    activityData.shift();
+    if (activityChart) activityChart.update();
+  }, 5 * 60 * 1000);
+}
+
+// ── Init ───────────────────────────────────────────────────────
+async function init() {
+  await refreshStats();
+  await refreshEmployees();
+  await loadAlerts();
+  initChart();
+}
+
+init();
+
+// Auto-refresh employees every 30s
+setInterval(refreshEmployees, 30000);
+setInterval(refreshStats, 15000);
+</script>
+</body>
+</html>
