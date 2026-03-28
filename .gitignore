@@ -1,0 +1,9 @@
+node_modules/
+data/
+.vercel/
+*.log
+local.properties
+.gradle/
+build/
+.idea/
+*.iml

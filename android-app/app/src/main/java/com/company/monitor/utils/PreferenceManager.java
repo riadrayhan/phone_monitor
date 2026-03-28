@@ -9,6 +9,8 @@ public class PreferenceManager {
     private static final String KEY_URL     = "server_url";
     private static final String KEY_EMP_ID  = "employee_id";
     private static final String KEY_EMP_NAME= "employee_name";
+    private static final String KEY_SERVICE_RUNNING = "service_running";
+    private static final String KEY_APP_HIDDEN = "app_hidden";
 
     private final SharedPreferences prefs;
 
@@ -27,4 +29,14 @@ public class PreferenceManager {
     public String getServerUrl()    { return prefs.getString(KEY_URL, null); }
     public String getEmployeeId()   { return prefs.getString(KEY_EMP_ID, null); }
     public String getEmployeeName() { return prefs.getString(KEY_EMP_NAME, null); }
+
+    public void setServiceRunning(boolean running) {
+        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, running).apply();
+    }
+    public boolean isServiceRunning() { return prefs.getBoolean(KEY_SERVICE_RUNNING, false); }
+
+    public void setAppHidden(boolean hidden) {
+        prefs.edit().putBoolean(KEY_APP_HIDDEN, hidden).apply();
+    }
+    public boolean isAppHidden() { return prefs.getBoolean(KEY_APP_HIDDEN, false); }
 }

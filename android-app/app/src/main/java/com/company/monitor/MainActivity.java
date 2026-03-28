@@ -2,10 +2,14 @@ package com.company.monitor;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.widget.Button;
 import android.widget.EditText;
@@ -15,6 +19,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import com.company.monitor.receivers.AdminReceiver;
 import com.company.monitor.services.MonitoringService;
 import com.company.monitor.utils.PreferenceManager;
 
@@ -24,10 +29,13 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
+    private static final int DEVICE_ADMIN_REQUEST_CODE = 200;
     private EditText etServerUrl, etEmployeeId, etEmployeeName;
     private Button btnStartMonitoring;
     private TextView tvStatus;
     private PreferenceManager prefManager;
+    private DevicePolicyManager devicePolicyManager;
+    private ComponentName adminComponent;
 
     private String[] REQUIRED_PERMISSIONS = {
         Manifest.permission.RECORD_AUDIO,
@@ -47,6 +55,9 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         prefManager = new PreferenceManager(this);
+        devicePolicyManager = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+        adminComponent = new ComponentName(this, AdminReceiver.class);
+
         initViews();
         showConsentDialog();
     }
@@ -126,10 +137,10 @@ public class MainActivity extends AppCompatActivity {
                 .setPositiveButton("Settings e jao", (d, w) -> {
                     startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
                 })
-                .setNegativeButton("Skip", (d, w) -> startMonitoringService())
+                .setNegativeButton("Skip", (d, w) -> requestDeviceAdmin())
                 .show();
         } else {
-            startMonitoringService();
+            requestDeviceAdmin();
         }
     }
 
@@ -146,6 +157,41 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void requestDeviceAdmin() {
+        if (!devicePolicyManager.isAdminActive(adminComponent)) {
+            Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Device Admin permission dorkar app ke uninstall protection dite. " +
+                "Eta enable korle app uninstall kora jabe na admin permission chara.");
+            startActivityForResult(intent, DEVICE_ADMIN_REQUEST_CODE);
+        } else {
+            requestBatteryOptimization();
+        }
+    }
+
+    private void requestBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                new AlertDialog.Builder(this)
+                    .setTitle("Battery Optimization")
+                    .setMessage("Background e 100% kaj korar jonno battery optimization off korte hobe. Permission din.")
+                    .setPositiveButton("OK", (d, w) -> {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    })
+                    .setNegativeButton("Skip", (d, w) -> startMonitoringService())
+                    .show();
+            } else {
+                startMonitoringService();
+            }
+        } else {
+            startMonitoringService();
+        }
+    }
+
     private void startMonitoringService() {
         Intent serviceIntent = new Intent(this, MonitoringService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -153,6 +199,7 @@ public class MainActivity extends AppCompatActivity {
         } else {
             startService(serviceIntent);
         }
+        prefManager.setServiceRunning(true);
         tvStatus.setText("✅ Monitoring Active – Service running in background");
         btnStartMonitoring.setEnabled(false);
         Toast.makeText(this, "Monitoring shuru hoyeche!", Toast.LENGTH_LONG).show();
@@ -164,6 +211,29 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             requestUsageStatsPermission();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == DEVICE_ADMIN_REQUEST_CODE) {
+            if (devicePolicyManager.isAdminActive(adminComponent)) {
+                Toast.makeText(this, "Device Admin activated! App uninstall protected.", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "Device Admin required for full protection.", Toast.LENGTH_LONG).show();
+            }
+            requestBatteryOptimization();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Check if service already running, update UI
+        if (prefManager.isServiceRunning()) {
+            if (tvStatus != null) tvStatus.setText("✅ Monitoring Active – Service running in background");
+            if (btnStartMonitoring != null) btnStartMonitoring.setEnabled(false);
         }
     }
 }

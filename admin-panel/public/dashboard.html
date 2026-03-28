@@ -99,6 +99,8 @@
   .btn-primary { background:var(--primary); color:#fff; }
   .btn-primary:hover { background:#283593; }
   .btn-danger  { background:#ffebee; color:#c62828; }
+  .btn-warn    { background:#fff3e0; color:#e65100; }
+  .btn-success { background:#e8f5e9; color:#2e7d32; }
 
   /* ── Detail panel ── */
   .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
@@ -273,7 +275,7 @@
           <thead>
             <tr>
               <th>Employee</th><th>Device</th><th>Status</th>
-              <th>Last Seen</th><th>Locations</th><th>Voices</th><th>Actions</th>
+              <th>Last Seen</th><th>Locations</th><th>Voices</th><th>App Visibility</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="empTableBody"></tbody>
@@ -395,10 +397,14 @@
 </div><!-- /main -->
 
 <script>
-const socket = io();
+const socket = io({ transports: ['polling', 'websocket'], upgrade: true });
 let liveEventCount = 0;
 let activityData   = Array(12).fill(0);
 let activityChart;
+let socketConnected = false;
+
+socket.on('connect', () => { socketConnected = true; console.log('Socket connected'); });
+socket.on('disconnect', () => { socketConnected = false; console.log('Socket disconnected'); });
 
 // ── Tab switching ──────────────────────────────────────────────
 function showTab(name) {
@@ -446,6 +452,13 @@ async function refreshEmployees() {
       <td>📍 ${e.locationCount}</td>
       <td>🎙️ ${e.voiceCount}</td>
       <td>
+        ${e.appHidden
+          ? `<button class="btn-sm btn-success" onclick="toggleAppVisibility('${e.employeeId}', false)">👁️ Unhide App</button>`
+          : `<button class="btn-sm btn-warn" onclick="toggleAppVisibility('${e.employeeId}', true)">🚫 Hide App</button>`
+        }
+        <span style="font-size:11px;color:var(--muted);display:block;margin-top:3px">${e.appHidden ? '🔒 Hidden' : '👁️ Visible'}</span>
+      </td>
+      <td>
         <button class="btn-sm btn-primary" onclick="viewEmployee('${e.employeeId}','${e.employeeName}')">View</button>
       </td>
     </tr>
@@ -470,6 +483,15 @@ function viewEmployee(id, name) {
 }
 
 socket.on('employee_status_change', () => refreshEmployees());
+
+// ── Hide/Unhide App ────────────────────────────────────────────
+function toggleAppVisibility(employeeId, hide) {
+  if (confirm(`Are you sure you want to ${hide ? 'HIDE' : 'UNHIDE'} the app on device ${employeeId}?`)) {
+    socket.emit('admin_hide_app', { employeeId, hide });
+  }
+}
+
+socket.on('app_hidden_changed', () => refreshEmployees());
 
 // ── Location ───────────────────────────────────────────────────
 async function loadLocation() {
@@ -683,9 +705,10 @@ async function init() {
 
 init();
 
-// Auto-refresh employees every 30s
-setInterval(refreshEmployees, 30000);
-setInterval(refreshStats, 15000);
+// Auto-refresh (faster polling for cloud mode)
+setInterval(refreshEmployees, 10000);
+setInterval(refreshStats, 10000);
+setInterval(loadAlerts, 15000);
 
 // ── Live Audio Streaming ─────────────────────────────────────────────
 let audioCtx = null;
