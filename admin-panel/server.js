@@ -356,31 +356,30 @@ async function generateBothSummaries(employeeId, state) {
             messages: [
                 {
                     role: 'system',
-                    content: `You are a precise Voice Conversation Summarizer. Your job is to read transcribed audio and extract EXACTLY what was said — the actual content, specific details, and real information.
+                    content: `তুমি একজন বাংলা ভাষার কথোপকথন বিশ্লেষক AI। তোমার কাজ হলো transcribed audio থেকে হুবহু কি কি কথা হয়েছে সেটা বের করা।
 
-CRITICAL RULES:
-- Extract the ACTUAL specific things people talked about. Example: "Person A said they want to go on a trip today. Person B refused and said they will go tomorrow instead."
-- Include specific details: names, places, amounts of money, times, plans, decisions mentioned
-- If they discussed money, write exactly what about money (how much, for what, who owes whom)
-- If they discussed going somewhere, write where, when, with whom
-- If they discussed food/water/items, write exactly what was said
-- NEVER write vague generic summaries like "personal relationships were discussed" or "emotional expressions were observed"
-- NEVER categorize conversations into abstract themes
-- Write it like you're telling someone exactly what happened in the conversation
-- If the transcription is in Bengali/Bangla, translate the actual content to English
-- Use simple bullet points, each bullet = one specific thing that was discussed or decided
+গুরুত্বপূর্ণ নিয়ম:
+- সম্পূর্ণ বাংলায় লিখবে
+- প্রথমে কথোপকথনের প্রতিটি বিষয় আলাদা আলাদা লাইনে লিখবে — ঠিক যা বলা হয়েছে তাই
+- উদাহরণ: "একজন বলেছে আজ ঘুরতে যাবো। আরেকজন বলেছে না, আজ না কাল যাবো।"
+- টাকা পয়সার কথা হলে — কত টাকা, কিসের জন্য, কে কাকে দেবে সব লিখবে
+- কোথাও যাওয়ার কথা হলে — কোথায়, কখন, কার সাথে লিখবে
+- খাবার, পানি, জিনিসপত্র নিয়ে কথা হলে — হুবহু কি বলা হয়েছে লিখবে
+- কখনোই অস্পষ্ট বা সাধারণ কথা লিখবে না যেমন "ব্যক্তিগত বিষয়ে আলোচনা হয়েছে" বা "আবেগীয় অভিব্যক্তি ছিল"
+- কখনোই tone, context, theme নিয়ে analysis করবে না
 
-Format:
-**What was talked about:**
-• [Exact specific point 1]
-• [Exact specific point 2]
-• [Exact specific point 3]
+ফরম্যাট:
+
+**📝 কথোপকথনের বিস্তারিত:**
+• [হুবহু কি বলা হয়েছে — লাইন ১]
+• [হুবহু কি বলা হয়েছে — লাইন ২]
+• [হুবহু কি বলা হয়েছে — লাইন ৩]
 ...
 
-**Decisions/Plans made:**
-• [Any specific plan or decision mentioned]
+**📌 সারসংক্ষেপ:**
+• [উপরের কথোপকথনের উপর ভিত্তি করে ২-৩ লাইনে মূল বিষয় কি ছিল সেটা লিখবে]
 
-Keep it factual and specific. NO filler text, NO generic observations, NO analysis of tone or structure.`
+শুধুমাত্র যা বলা হয়েছে তাই লিখবে। অতিরিক্ত কোনো মন্তব্য বা বিশ্লেষণ করবে না।`
                 },
                 {
                     role: 'user',
@@ -468,15 +467,28 @@ Keep it factual and specific. NO filler text, NO generic observations, NO analys
             messages: [
                 {
                     role: 'system',
-                    content: `You are an App Usage Analyst AI agent. Your job is to analyze app usage data from an employee's phone and create a clean, formatted summary for the admin/manager.
+                    content: `তুমি একজন অ্যাপ ব্যবহার বিশ্লেষক AI। তোমার কাজ হলো কর্মীর ফোনে কোন অ্যাপ কতক্ষণ ব্যবহার হয়েছে তার একটি পরিষ্কার সারাংশ তৈরি করা।
 
-Provide:
-1. **App Usage Breakdown**: List each app with its usage duration in a clean format (e.g., "Facebook: 2 hours 15 min", "YouTube: 45 min", "Chrome: 30 min")
-2. **Total Screen Time**: Sum up the total active screen time
-3. **Usage Pattern**: Brief observation about usage patterns (e.g., "Mostly social media", "Focused on work apps", etc.)
-4. **Top 3 Most Used Apps**: Highlight the top 3
+সম্পূর্ণ বাংলায় লিখবে।
 
-Keep it clean, well-formatted, and easy to read at a glance. Use simple bullet points or a list format.`
+ফরম্যাট:
+
+**📱 অ্যাপ ব্যবহারের তালিকা:**
+• Facebook: ২ ঘণ্টা ১৫ মিনিট
+• YouTube: ৪৫ মিনিট
+• Chrome: ৩০ মিনিট
+(এভাবে সব অ্যাপ তালিকা করবে)
+
+**⏱️ মোট স্ক্রিন টাইম:** [মোট সময়]
+
+**🏆 সবচেয়ে বেশি ব্যবহৃত ৩টি অ্যাপ:**
+১. [অ্যাপ ১]
+২. [অ্যাপ ২]
+৩. [অ্যাপ ৩]
+
+**📌 সারসংক্ষেপ:** [১-২ লাইনে বলবে — বেশিরভাগ সময় কিসে কেটেছে, সোশ্যাল মিডিয়া/কাজ/বিনোদন ইত্যাদি]
+
+পরিষ্কার ও সংক্ষিপ্ত রাখবে। সময় বাংলায় লিখলেও ইংরেজিতে লেখা চলবে (যেমন 2 hr 15 min)।`
                 },
                 {
                     role: 'user',
