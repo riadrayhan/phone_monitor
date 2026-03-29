@@ -1060,9 +1060,10 @@ async function toggleAiAgent() {
     // Check if we are stopping (generating summary)
     const statusR = await fetch('/api/ai-agent/status/' + encodeURIComponent(empId));
     const statusD = await statusR.json();
+    const wasStopping = statusD.active;
 
-    if (statusD.active) {
-      // Stopping - show generating state
+    if (wasStopping) {
+      // Show generating UI immediately
       document.getElementById('aiAgentStatus').style.display = 'none';
       document.getElementById('aiGenerating').style.display = 'block';
       btn.style.display = 'none';
@@ -1076,12 +1077,17 @@ async function toggleAiAgent() {
 
     if (r.ok) {
       const d = await r.json();
+      if (d.generating) {
+        // Summary is being generated in background — keep generating UI visible
+        // Socket event 'ai_agent_toggled' will update when done
+        btn.disabled = false;
+        return;
+      }
+      // Started monitoring
       updateAiToggleUI(d.active, d.active ? Date.now() : null);
-      if (!d.active) loadAiSummaries();
     } else {
       const d = await r.json();
       alert(d.error || 'Failed to toggle AI agent');
-      // Restore UI
       onAiEmpChange();
     }
   } catch(e) {
@@ -1090,8 +1096,6 @@ async function toggleAiAgent() {
   }
 
   btn.disabled = false;
-  btn.style.display = 'inline-block';
-  document.getElementById('aiGenerating').style.display = 'none';
 }
 
 async function loadAiSummaries() {
@@ -1151,14 +1155,23 @@ socket.on('ai_agent_toggled', (data) => {
       document.getElementById('aiGenerating').style.display = 'block';
       document.getElementById('aiToggleBtn').style.display = 'none';
     } else {
-      updateAiToggleUI(data.active, data.active ? Date.now() : null);
+      updateAiToggleUI(false, null);
       document.getElementById('aiToggleBtn').style.display = 'inline-block';
+      document.getElementById('aiToggleBtn').disabled = false;
       document.getElementById('aiGenerating').style.display = 'none';
+      if (data.error) {
+        alert('AI Summary Error: ' + data.error);
+      }
     }
   }
 });
 
-socket.on('ai_summary_ready', () => loadAiSummaries());
+socket.on('ai_summary_ready', (summary) => {
+  loadAiSummaries();
+  // Show a brief notification
+  const emp = summary.employeeName || summary.employeeId;
+  console.log('AI Summary ready for', emp);
+});
 
 // Load summaries on init
 loadAiSummaries();

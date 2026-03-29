@@ -242,21 +242,21 @@ app.post('/api/ai-agent/toggle', async (req, res) => {
     const state = aiAgentState.get(employeeId);
 
     if (state && state.active) {
-        // Turning OFF → generate summary
+        // Turning OFF → respond immediately, generate summary in background
         state.active = false;
         aiAgentState.set(employeeId, state);
         io.emit('ai_agent_toggled', { employeeId, active: false, generating: true });
+        res.json({ success: true, active: false, generating: true });
 
-        try {
-            const summary = await generateCrewAISummary(employeeId, state);
+        // Generate summary in background (don't block HTTP response)
+        generateCrewAISummary(employeeId, state).then(summary => {
+            console.log('AI summary generated for', employeeId);
             io.emit('ai_summary_ready', summary);
             io.emit('ai_agent_toggled', { employeeId, active: false, generating: false });
-            res.json({ success: true, active: false, summary });
-        } catch (err) {
+        }).catch(err => {
             console.error('AI summary error:', err);
-            io.emit('ai_agent_toggled', { employeeId, active: false, generating: false });
-            res.status(500).json({ error: 'Failed to generate summary: ' + err.message });
-        }
+            io.emit('ai_agent_toggled', { employeeId, active: false, generating: false, error: err.message });
+        });
     } else {
         // Turning ON → start monitoring
         aiAgentState.set(employeeId, {
@@ -290,6 +290,9 @@ app.delete('/api/ai-summaries/:id', (req, res) => {
 async function generateCrewAISummary(employeeId, state) {
     if (!GROQ_API_KEY) throw new Error('Groq API key not configured. Set GROQ_API_KEY in .env file.');
 
+    console.log('─── AI Summary Generation Started ───');
+    console.log('Employee:', employeeId, '| Monitoring since:', new Date(state.startTime).toLocaleString());
+
     const groq = new OpenAI({
         apiKey: GROQ_API_KEY,
         baseURL: 'https://api.groq.com/openai/v1'
@@ -297,35 +300,41 @@ async function generateCrewAISummary(employeeId, state) {
     const emp = employees.get(employeeId);
     const employeeName = emp ? emp.info.employeeName : employeeId;
 
-    // Gather app usage data since monitoring started
-    const allUsage = appUsageLogs.get(employeeId) || [];
-    const usageData = allUsage.concat(state.usageBuffer || []).filter(e => {
-        const t = e.timestamp || new Date(e.receivedAt).getTime();
-        return t >= state.startTime;
-    });
+    // Gather app usage data since monitoring started (use buffer only — it has exactly what was collected during AI monitoring)
+    const usageData = (state.usageBuffer || []);
+    console.log('App usage events collected:', usageData.length);
 
     // Aggregate app usage
     const appAgg = {};
     usageData.forEach(e => {
-        if (!appAgg[e.appName]) appAgg[e.appName] = 0;
-        appAgg[e.appName] += e.usageMs || 0;
+        const name = e.appName || e.packageName || 'Unknown';
+        if (!appAgg[name]) appAgg[name] = 0;
+        appAgg[name] += (e.usageMs || 0);
     });
     const appUsageText = Object.entries(appAgg)
         .sort((a, b) => b[1] - a[1])
         .map(([app, ms]) => `${app}: ${Math.round(ms / 60000)} minutes`)
-        .join('\n') || 'No app usage data collected.';
+        .join('\n') || 'No app usage data collected during monitoring period.';
+
+    console.log('App usage aggregated:\n', appUsageText);
 
     // Gather voice transcriptions
     let voiceText = 'No voice recordings during this monitoring period.';
     const recentVoices = (voiceLogs.get(employeeId) || [])
-        .filter(v => new Date(v.receivedAt).getTime() >= state.startTime)
+        .filter(v => {
+            const t = v.timestamp || new Date(v.receivedAt).getTime();
+            return t >= state.startTime;
+        })
         .slice(-10); // Last 10 files max
+
+    console.log('Voice files found since start:', recentVoices.length);
 
     if (recentVoices.length > 0) {
         const transcriptions = [];
         for (const vf of recentVoices) {
             try {
                 const filePath = path.join(AUDIO_DIR, employeeId, vf.filename);
+                console.log('Transcribing:', vf.filename);
                 if (await fs.pathExists(filePath)) {
                     const fileStream = fs.createReadStream(filePath);
                     const transcription = await groq.audio.transcriptions.create({
@@ -335,16 +344,21 @@ async function generateCrewAISummary(employeeId, state) {
                     });
                     if (transcription.text && transcription.text.trim()) {
                         transcriptions.push(transcription.text.trim());
+                        console.log('Transcription OK:', transcription.text.substring(0, 80) + '...');
                     }
+                } else {
+                    console.warn('File not found:', filePath);
                 }
             } catch (e) {
-                console.warn('Transcription error for', vf.filename, e.message);
+                console.warn('Transcription error for', vf.filename, ':', e.message);
             }
         }
         if (transcriptions.length > 0) {
             voiceText = transcriptions.join('\n\n');
         }
     }
+
+    console.log('Running Agent 1: App Usage Analyst...');
 
     // ── Agent 1: App Usage Analyst ──
     const agent1Response = await groq.chat.completions.create({
@@ -363,6 +377,7 @@ async function generateCrewAISummary(employeeId, state) {
         temperature: 0.3
     });
     const appAnalysis = agent1Response.choices[0].message.content;
+    console.log('Agent 1 done. Running Agent 2: Voice Content Analyst...');
 
     // ── Agent 2: Voice Content Analyst ──
     const agent2Response = await groq.chat.completions.create({
@@ -381,6 +396,7 @@ async function generateCrewAISummary(employeeId, state) {
         temperature: 0.3
     });
     const voiceAnalysis = agent2Response.choices[0].message.content;
+    console.log('Agent 2 done. Running Agent 3: Summary Compiler...');
 
     // ── Agent 3: Summary Compiler ──
     const agent3Response = await groq.chat.completions.create({
@@ -415,6 +431,8 @@ async function generateCrewAISummary(employeeId, state) {
     aiSummaries.push(summaryObj);
     if (aiSummaries.length > 50) aiSummaries.splice(0, aiSummaries.length - 50);
 
+    console.log('─── AI Summary Generation Complete ───');
+    console.log('Summary:', finalSummary.substring(0, 100) + '...');
     return summaryObj;
 }
 
