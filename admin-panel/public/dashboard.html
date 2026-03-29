@@ -418,7 +418,7 @@ function showTab(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => {
-    if (n.textContent.toLowerCase().includes(name.replace('livefeed','live feed').replace('liveaudio','live audio'))) n.classList.add('active');
+    if (n.textContent.toLowerCase().includes(name.replace('livefeed','live feed').replace('liveaudio','live audio').replace('noticeboard','notice board'))) n.classList.add('active');
   });
   const titles = { dashboard:'Dashboard', employees:'All Employees', location:'Location Tracking',
     appusage:'App Usage', voice:'Voice Recordings', livefeed:'Live Feed', liveaudio:'Live Audio', noticeboard:'Notice Board' };
