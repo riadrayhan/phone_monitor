@@ -328,9 +328,12 @@ async function generateBothSummaries(employeeId, state) {
                 if (await fs.pathExists(filePath)) {
                     const fileStream = fs.createReadStream(filePath);
                     const transcription = await groq.audio.transcriptions.create({
-                        model: 'whisper-large-v3-turbo',
+                        model: 'whisper-large-v3',
                         file: fileStream,
-                        language: 'bn'
+                        language: 'bn',
+                        prompt: 'এটি একটি বাংলা কথোপকথন। কথোপকথনে বাংলাদেশের মানুষ কথা বলছে। টাকা, বাজার, খাবার, পানি, ঘুরতে যাওয়া, অফিস, কাজ ইত্যাদি বিষয়ে কথা হতে পারে।',
+                        temperature: 0,
+                        response_format: 'text'
                     });
                     if (transcription.text && transcription.text.trim()) {
                         transcriptions.push(transcription.text.trim());
