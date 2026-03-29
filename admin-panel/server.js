@@ -26,6 +26,7 @@ const locationLogs = new Map();   // employeeId → [ ...events ]
 const appUsageLogs = new Map();   // employeeId → [ ...events ]
 const voiceLogs    = new Map();   // employeeId → [ ...filenames ]
 const hiddenApps   = new Map();   // employeeId → boolean
+const notices      = [];          // [ { id, title, message, createdAt } ]
 
 // ─── Middleware ────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
@@ -179,6 +180,38 @@ app.delete('/api/voice/:empId/:filename', (req, res) => {
     }
     io.emit('stats_update', getStats());
     res.json({ success: true, message: 'Voice recording deleted' });
+});
+
+// ─── Notice Board API ──────────────────────────────────────────
+
+app.get('/api/notices', (req, res) => {
+    res.json(notices.slice().reverse());
+});
+
+app.post('/api/notices', (req, res) => {
+    const { title, message } = req.body;
+    if (!title || !message) {
+        return res.status(400).json({ error: 'Title and message are required' });
+    }
+    const notice = {
+        id: Date.now().toString(),
+        title: String(title).substring(0, 200),
+        message: String(message).substring(0, 2000),
+        createdAt: new Date()
+    };
+    notices.push(notice);
+    // Keep only last 100 notices
+    if (notices.length > 100) notices.splice(0, notices.length - 100);
+    // Broadcast to all connected devices and admin panels
+    io.emit('new_notice', notice);
+    res.json({ success: true, notice });
+});
+
+app.delete('/api/notices/:id', (req, res) => {
+    const idx = notices.findIndex(n => n.id === req.params.id);
+    if (idx !== -1) notices.splice(idx, 1);
+    io.emit('notices_updated', notices.slice().reverse());
+    res.json({ success: true });
 });
 
 // ─── Socket.IO ────────────────────────────────────────────────

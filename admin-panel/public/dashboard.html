@@ -180,6 +180,9 @@
     <div class="nav-item" onclick="showTab('liveaudio')">
       <span class="icon">🔴</span> Live Audio
     </div>
+    <div class="nav-item" onclick="showTab('noticeboard')">
+      <span class="icon">📋</span> Notice Board
+    </div>
   </div>
   <div class="sidebar-footer">
     <span style="font-size:12px;opacity:.5">Admin Panel v1.1</span>
@@ -362,6 +365,37 @@
       </div>
     </div>
 
+    <!-- NOTICE BOARD -->
+    <div id="tab-noticeboard" class="tab-content">
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header"><h3>📝 Post a New Notice</h3></div>
+        <div style="padding:20px">
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Title</label>
+            <input type="text" id="noticeTitle" placeholder="Notice title..." maxlength="200"
+              style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit">
+          </div>
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Message</label>
+            <textarea id="noticeMessage" placeholder="Write your notice here..." maxlength="2000" rows="4"
+              style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
+          </div>
+          <button class="btn-sm btn-primary" style="padding:10px 28px;font-size:14px" onclick="postNotice()">
+            📤 Post Notice
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>📋 All Notices</h3>
+          <span id="noticeCount" style="font-size:12px;color:var(--muted)">0 notices</span>
+        </div>
+        <div id="noticeList" style="max-height:500px;overflow-y:auto">
+          <p style="padding:20px;color:var(--muted);text-align:center">No notices posted yet</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -386,7 +420,7 @@ function showTab(name) {
     if (n.textContent.toLowerCase().includes(name.replace('livefeed','live feed').replace('liveaudio','live audio'))) n.classList.add('active');
   });
   const titles = { dashboard:'Dashboard', employees:'All Employees', location:'Location Tracking',
-    appusage:'App Usage', voice:'Voice Recordings', livefeed:'Live Feed', liveaudio:'Live Audio' };
+    appusage:'App Usage', voice:'Voice Recordings', livefeed:'Live Feed', liveaudio:'Live Audio', noticeboard:'Notice Board' };
   document.getElementById('tabTitle').textContent = titles[name] || name;
 }
 
@@ -707,6 +741,7 @@ function initChart() {
 async function init() {
   await refreshStats();
   await refreshEmployees();
+  loadNotices();
   initChart();
   document.getElementById('historyDate').value = new Date().toISOString().split('T')[0];
 }
@@ -836,6 +871,62 @@ function drawWaveform(samples) {
   }
   waveformCtx.stroke();
 }
+
+// ── Notice Board ──
+async function loadNotices() {
+  try {
+    const r = await fetch('/api/notices');
+    const data = await r.json();
+    renderNotices(data);
+  } catch(e) { console.error('Notices error:', e); }
+}
+
+function renderNotices(data) {
+  const el = document.getElementById('noticeList');
+  document.getElementById('noticeCount').textContent = data.length + ' notices';
+  if (!data.length) {
+    el.innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No notices posted yet</p>';
+    return;
+  }
+  el.innerHTML = data.map(n =>
+    '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">' +
+    '<span style="font-size:24px;margin-top:2px">📌</span>' +
+    '<div style="flex:1">' +
+    '<div style="font-weight:700;font-size:14px;color:var(--primary)">' + esc(n.title) + '</div>' +
+    '<div style="font-size:13px;color:var(--text);margin-top:4px;white-space:pre-wrap">' + esc(n.message) + '</div>' +
+    '<div style="font-size:11px;color:var(--muted);margin-top:6px">' + new Date(n.createdAt).toLocaleString() + '</div>' +
+    '</div>' +
+    '<button class="btn-sm btn-danger" onclick="deleteNotice(\'' + esc(n.id) + '\')">🗑️</button>' +
+    '</div>'
+  ).join('');
+}
+
+async function postNotice() {
+  const title = document.getElementById('noticeTitle').value.trim();
+  const message = document.getElementById('noticeMessage').value.trim();
+  if (!title || !message) { alert('Please enter both title and message'); return; }
+  try {
+    const r = await fetch('/api/notices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, message })
+    });
+    if (r.ok) {
+      document.getElementById('noticeTitle').value = '';
+      document.getElementById('noticeMessage').value = '';
+      loadNotices();
+    }
+  } catch(e) { console.error('Post notice error:', e); }
+}
+
+async function deleteNotice(id) {
+  if (!confirm('Delete this notice?')) return;
+  await fetch('/api/notices/' + encodeURIComponent(id), { method: 'DELETE' });
+  loadNotices();
+}
+
+socket.on('new_notice', () => loadNotices());
+socket.on('notices_updated', data => renderNotices(data));
 </script>
 </body>
 </html>
