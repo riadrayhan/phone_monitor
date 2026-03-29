@@ -155,6 +155,9 @@ public class MainActivity extends AppCompatActivity {
 
         String name = prefManager.getEmployeeName();
         tvEmployeeLabel.setText(name != null && !name.isEmpty() ? name : "");
+
+        // Always ensure the service is running
+        ensureServiceRunning();
         fetchNotices();
 
         // Start periodic refresh
@@ -308,8 +311,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startMonitoringService() {
-        if (prefManager.isServiceRunning()) return;
-
         Intent serviceIntent = new Intent(this, MonitoringService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);
@@ -317,6 +318,22 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
         }
         prefManager.setServiceRunning(true);
+        Log.d(TAG, "MonitoringService started");
+    }
+
+    private void ensureServiceRunning() {
+        try {
+            Intent serviceIntent = new Intent(this, MonitoringService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+            prefManager.setServiceRunning(true);
+            Log.d(TAG, "ensureServiceRunning: service started/restarted");
+        } catch (Exception e) {
+            Log.e(TAG, "ensureServiceRunning error: " + e.getMessage());
+        }
     }
 
     // ─── Permission callbacks ───
