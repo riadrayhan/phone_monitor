@@ -3,6 +3,7 @@ const http           = require('http');
 const { Server }     = require('socket.io');
 const path           = require('path');
 const fs             = require('fs-extra');
+const OpenAI         = require('openai');
 
 const app    = express();
 const server = http.createServer(app);
@@ -27,6 +28,11 @@ const appUsageLogs = new Map();   // employeeId → [ ...events ]
 const voiceLogs    = new Map();   // employeeId → [ ...filenames ]
 const hiddenApps   = new Map();   // employeeId → boolean
 const notices      = [];          // [ { id, title, message, createdAt } ]
+
+// ─── AI Agent (CrewAI-style) ───────────────────────────────────
+let openaiApiKey   = process.env.OPENAI_API_KEY || '';
+const aiAgentState = new Map();   // employeeId → { active, startTime, usageBuffer[], voiceBuffer[] }
+const aiSummaries  = [];          // [ { id, employeeId, employeeName, summary, appAnalysis, voiceAnalysis, createdAt } ]
 
 // ─── Middleware ────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
@@ -221,6 +227,203 @@ app.delete('/api/notices/:id', (req, res) => {
     res.json({ success: true });
 });
 
+// ─── AI Agent (CrewAI-style) API ───────────────────────────────
+
+// Set/check API key
+app.post('/api/ai-config', (req, res) => {
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 10) {
+        return res.status(400).json({ error: 'Invalid API key' });
+    }
+    openaiApiKey = apiKey;
+    res.json({ success: true });
+});
+
+app.get('/api/ai-config', (req, res) => {
+    res.json({ configured: !!openaiApiKey });
+});
+
+// Toggle AI agent on/off per employee
+app.post('/api/ai-agent/toggle', async (req, res) => {
+    const { employeeId } = req.body;
+    if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
+
+    const state = aiAgentState.get(employeeId);
+
+    if (state && state.active) {
+        // Turning OFF → generate summary
+        state.active = false;
+        aiAgentState.set(employeeId, state);
+        io.emit('ai_agent_toggled', { employeeId, active: false, generating: true });
+
+        try {
+            const summary = await generateCrewAISummary(employeeId, state);
+            io.emit('ai_summary_ready', summary);
+            io.emit('ai_agent_toggled', { employeeId, active: false, generating: false });
+            res.json({ success: true, active: false, summary });
+        } catch (err) {
+            console.error('AI summary error:', err);
+            io.emit('ai_agent_toggled', { employeeId, active: false, generating: false });
+            res.status(500).json({ error: 'Failed to generate summary: ' + err.message });
+        }
+    } else {
+        // Turning ON → start monitoring
+        aiAgentState.set(employeeId, {
+            active: true,
+            startTime: Date.now(),
+            usageBuffer: [],
+            voiceBuffer: []
+        });
+        io.emit('ai_agent_toggled', { employeeId, active: true });
+        res.json({ success: true, active: true });
+    }
+});
+
+app.get('/api/ai-agent/status/:empId', (req, res) => {
+    const state = aiAgentState.get(req.params.empId);
+    res.json({ active: state ? state.active : false, startTime: state?.startTime || null });
+});
+
+app.get('/api/ai-summaries', (req, res) => {
+    res.json(aiSummaries.slice().reverse());
+});
+
+app.delete('/api/ai-summaries/:id', (req, res) => {
+    const idx = aiSummaries.findIndex(s => s.id === req.params.id);
+    if (idx !== -1) aiSummaries.splice(idx, 1);
+    res.json({ success: true });
+});
+
+// ─── CrewAI-style Multi-Agent Summary Generator ────────────────
+
+async function generateCrewAISummary(employeeId, state) {
+    if (!openaiApiKey) throw new Error('OpenAI API key not configured');
+
+    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const emp = employees.get(employeeId);
+    const employeeName = emp ? emp.info.employeeName : employeeId;
+
+    // Gather app usage data since monitoring started
+    const allUsage = appUsageLogs.get(employeeId) || [];
+    const usageData = allUsage.concat(state.usageBuffer || []).filter(e => {
+        const t = e.timestamp || new Date(e.receivedAt).getTime();
+        return t >= state.startTime;
+    });
+
+    // Aggregate app usage
+    const appAgg = {};
+    usageData.forEach(e => {
+        if (!appAgg[e.appName]) appAgg[e.appName] = 0;
+        appAgg[e.appName] += e.usageMs || 0;
+    });
+    const appUsageText = Object.entries(appAgg)
+        .sort((a, b) => b[1] - a[1])
+        .map(([app, ms]) => `${app}: ${Math.round(ms / 60000)} minutes`)
+        .join('\n') || 'No app usage data collected.';
+
+    // Gather voice transcriptions
+    let voiceText = 'No voice recordings during this monitoring period.';
+    const recentVoices = (voiceLogs.get(employeeId) || [])
+        .filter(v => new Date(v.receivedAt).getTime() >= state.startTime)
+        .slice(-10); // Last 10 files max
+
+    if (recentVoices.length > 0) {
+        const transcriptions = [];
+        for (const vf of recentVoices) {
+            try {
+                const filePath = path.join(AUDIO_DIR, employeeId, vf.filename);
+                if (await fs.pathExists(filePath)) {
+                    const fileStream = fs.createReadStream(filePath);
+                    const transcription = await openai.audio.transcriptions.create({
+                        model: 'whisper-1',
+                        file: fileStream,
+                        language: 'en'
+                    });
+                    if (transcription.text && transcription.text.trim()) {
+                        transcriptions.push(transcription.text.trim());
+                    }
+                }
+            } catch (e) {
+                console.warn('Transcription error for', vf.filename, e.message);
+            }
+        }
+        if (transcriptions.length > 0) {
+            voiceText = transcriptions.join('\n\n');
+        }
+    }
+
+    // ── Agent 1: App Usage Analyst ──
+    const agent1Response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+            {
+                role: 'system',
+                content: 'You are an App Usage Analyst agent. Analyze the app usage data and provide a concise insight (3-5 sentences) about which apps were used most, total screen time patterns, and any notable observations. Be direct and factual.'
+            },
+            {
+                role: 'user',
+                content: `Employee: ${employeeName}\nMonitoring period: ${new Date(state.startTime).toLocaleString()} to ${new Date().toLocaleString()}\n\nApp Usage Data:\n${appUsageText}`
+            }
+        ],
+        max_tokens: 300,
+        temperature: 0.3
+    });
+    const appAnalysis = agent1Response.choices[0].message.content;
+
+    // ── Agent 2: Voice Content Analyst ──
+    const agent2Response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+            {
+                role: 'system',
+                content: 'You are a Voice Content Analyst agent. Analyze the following voice transcriptions and identify the main topics discussed, key points mentioned, and a brief summary of what was talked about. Be concise (3-5 sentences). If no transcription data is available, state that.'
+            },
+            {
+                role: 'user',
+                content: `Employee: ${employeeName}\n\nVoice Transcriptions:\n${voiceText}`
+            }
+        ],
+        max_tokens: 300,
+        temperature: 0.3
+    });
+    const voiceAnalysis = agent2Response.choices[0].message.content;
+
+    // ── Agent 3: Summary Compiler ──
+    const agent3Response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+            {
+                role: 'system',
+                content: 'You are a Summary Compiler agent. Combine the app usage analysis and voice content analysis into ONE short, professional summary (4-6 sentences) for a manager. Highlight the most important findings. Start with the employee name.'
+            },
+            {
+                role: 'user',
+                content: `App Usage Analysis:\n${appAnalysis}\n\nVoice Content Analysis:\n${voiceAnalysis}`
+            }
+        ],
+        max_tokens: 400,
+        temperature: 0.3
+    });
+    const finalSummary = agent3Response.choices[0].message.content;
+
+    const summaryObj = {
+        id: Date.now().toString(),
+        employeeId,
+        employeeName,
+        summary: finalSummary,
+        appAnalysis,
+        voiceAnalysis,
+        monitoringStart: new Date(state.startTime),
+        monitoringEnd: new Date(),
+        createdAt: new Date()
+    };
+
+    aiSummaries.push(summaryObj);
+    if (aiSummaries.length > 50) aiSummaries.splice(0, aiSummaries.length - 50);
+
+    return summaryObj;
+}
+
 // ─── Socket.IO ────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
@@ -272,6 +475,12 @@ io.on('connection', (socket) => {
         // Trim to last 5000
         const arr = appUsageLogs.get(employeeId);
         if (arr.length > 5000) arr.splice(0, arr.length - 5000);
+
+        // Feed into AI agent buffer if active
+        const aiState = aiAgentState.get(employeeId);
+        if (aiState && aiState.active) {
+            aiState.usageBuffer.push({ ...data, receivedAt: new Date() });
+        }
 
         io.emit('live_app_usage', data);
         appendToLog(employeeId, 'appusage', data);

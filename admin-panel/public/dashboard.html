@@ -183,6 +183,9 @@
     <div class="nav-item" onclick="showTab('noticeboard')">
       <span class="icon">📋</span> Notice Board
     </div>
+    <div class="nav-item" onclick="showTab('aiagent')">
+      <span class="icon">🤖</span> AI Agent
+    </div>
   </div>
   <div class="sidebar-footer">
     <span style="font-size:12px;opacity:.5">Admin Panel v1.1</span>
@@ -397,6 +400,61 @@
       </div>
     </div>
 
+    <!-- AI Agent Tab -->
+    <div id="tab-aiagent" class="tab-content">
+      <!-- API Key Config -->
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header"><h3>🔑 OpenAI API Configuration</h3></div>
+        <div style="padding:20px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:1;min-width:250px">
+            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">OpenAI API Key</label>
+            <input type="password" id="aiApiKey" placeholder="sk-..."
+              style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit">
+          </div>
+          <button class="btn-sm btn-primary" style="padding:10px 20px;font-size:14px" onclick="saveAiApiKey()">💾 Save Key</button>
+          <span id="aiKeyStatus" style="font-size:13px;color:var(--muted)"></span>
+        </div>
+      </div>
+
+      <!-- Agent Control -->
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header"><h3>🤖 CrewAI Agent Control</h3></div>
+        <div style="padding:20px">
+          <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+            <div style="min-width:220px">
+              <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Select Employee</label>
+              <select id="aiEmpSel" onchange="onAiEmpChange()"
+                style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:#fff">
+                <option value="">-- Select Employee --</option>
+              </select>
+            </div>
+            <button id="aiToggleBtn" class="btn-sm btn-success" style="padding:10px 24px;font-size:14px;display:none" onclick="toggleAiAgent()">
+              ▶️ Start AI Monitoring
+            </button>
+          </div>
+          <div id="aiAgentStatus" style="display:none;padding:14px 18px;border-radius:10px;background:#e8f5e9;border:1px solid #c8e6c9;font-size:14px">
+            <strong>🟢 AI Agent Active</strong> — Collecting app usage and voice data...
+            <div id="aiMonitoringSince" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+          </div>
+          <div id="aiGenerating" style="display:none;padding:14px 18px;border-radius:10px;background:#fff3e0;border:1px solid #ffe0b2;font-size:14px;text-align:center">
+            <strong>⏳ Generating AI Summary...</strong>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">Running 3 AI agents: App Analyst → Voice Analyst → Summary Compiler</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summaries List -->
+      <div class="card">
+        <div class="card-header">
+          <h3>📊 AI Summaries</h3>
+          <span id="aiSummaryCount" style="font-size:12px;color:var(--muted)">0 summaries</span>
+        </div>
+        <div id="aiSummaryList" style="max-height:600px;overflow-y:auto">
+          <p style="padding:20px;color:var(--muted);text-align:center">No AI summaries yet. Start monitoring an employee to generate one.</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -418,10 +476,10 @@ function showTab(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => {
-    if (n.textContent.toLowerCase().includes(name.replace('livefeed','live feed').replace('liveaudio','live audio').replace('noticeboard','notice board'))) n.classList.add('active');
+    if (n.textContent.toLowerCase().includes(name.replace('livefeed','live feed').replace('liveaudio','live audio').replace('noticeboard','notice board').replace('aiagent','ai agent'))) n.classList.add('active');
   });
   const titles = { dashboard:'Dashboard', employees:'All Employees', location:'Location Tracking',
-    appusage:'App Usage', voice:'Voice Recordings', livefeed:'Live Feed', liveaudio:'Live Audio', noticeboard:'Notice Board' };
+    appusage:'App Usage', voice:'Voice Recordings', livefeed:'Live Feed', liveaudio:'Live Audio', noticeboard:'Notice Board', aiagent:'AI Agent' };
   document.getElementById('tabTitle').textContent = titles[name] || name;
 }
 
@@ -471,7 +529,7 @@ async function refreshEmployees() {
       </tr>
     `).join('');
 
-    const selectors = ['locEmpSel','appEmpSel','voiceEmpSel','liveAudioEmpSel'];
+    const selectors = ['locEmpSel','appEmpSel','voiceEmpSel','liveAudioEmpSel','aiEmpSel'];
     selectors.forEach(sid => {
       const sel = document.getElementById(sid);
       const cur = sel.value;
@@ -935,6 +993,198 @@ async function deleteNotice(id) {
 
 socket.on('new_notice', () => loadNotices());
 socket.on('notices_updated', data => renderNotices(data));
+
+// ── AI Agent ──
+async function checkAiKeyStatus() {
+  try {
+    const r = await fetch('/api/ai-config');
+    const d = await r.json();
+    document.getElementById('aiKeyStatus').textContent = d.configured ? '✅ Key configured' : '❌ No key set';
+    document.getElementById('aiKeyStatus').style.color = d.configured ? 'var(--success)' : 'var(--danger)';
+  } catch(e) {}
+}
+checkAiKeyStatus();
+
+async function saveAiApiKey() {
+  const key = document.getElementById('aiApiKey').value.trim();
+  if (!key) { alert('Please enter an API key'); return; }
+  try {
+    const r = await fetch('/api/ai-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: key })
+    });
+    if (r.ok) {
+      document.getElementById('aiApiKey').value = '';
+      document.getElementById('aiKeyStatus').textContent = '✅ Key saved';
+      document.getElementById('aiKeyStatus').style.color = 'var(--success)';
+    } else {
+      const d = await r.json();
+      alert(d.error || 'Failed to save key');
+    }
+  } catch(e) { alert('Error saving key'); }
+}
+
+async function onAiEmpChange() {
+  const empId = document.getElementById('aiEmpSel').value;
+  const btn = document.getElementById('aiToggleBtn');
+  const statusDiv = document.getElementById('aiAgentStatus');
+  const genDiv = document.getElementById('aiGenerating');
+
+  if (!empId) {
+    btn.style.display = 'none';
+    statusDiv.style.display = 'none';
+    genDiv.style.display = 'none';
+    return;
+  }
+
+  btn.style.display = 'inline-block';
+  try {
+    const r = await fetch('/api/ai-agent/status/' + encodeURIComponent(empId));
+    const d = await r.json();
+    updateAiToggleUI(d.active, d.startTime);
+  } catch(e) {
+    updateAiToggleUI(false, null);
+  }
+}
+
+function updateAiToggleUI(active, startTime) {
+  const btn = document.getElementById('aiToggleBtn');
+  const statusDiv = document.getElementById('aiAgentStatus');
+  const genDiv = document.getElementById('aiGenerating');
+
+  genDiv.style.display = 'none';
+  if (active) {
+    btn.innerHTML = '⏹️ Stop & Generate Summary';
+    btn.className = 'btn-sm btn-danger';
+    btn.style.padding = '10px 24px';
+    btn.style.fontSize = '14px';
+    statusDiv.style.display = 'block';
+    if (startTime) {
+      document.getElementById('aiMonitoringSince').textContent = 'Monitoring since ' + new Date(startTime).toLocaleString();
+    }
+  } else {
+    btn.innerHTML = '▶️ Start AI Monitoring';
+    btn.className = 'btn-sm btn-success';
+    btn.style.padding = '10px 24px';
+    btn.style.fontSize = '14px';
+    statusDiv.style.display = 'none';
+  }
+}
+
+async function toggleAiAgent() {
+  const empId = document.getElementById('aiEmpSel').value;
+  if (!empId) return;
+
+  const btn = document.getElementById('aiToggleBtn');
+  btn.disabled = true;
+
+  try {
+    // Check if we are stopping (generating summary)
+    const statusR = await fetch('/api/ai-agent/status/' + encodeURIComponent(empId));
+    const statusD = await statusR.json();
+
+    if (statusD.active) {
+      // Stopping - show generating state
+      document.getElementById('aiAgentStatus').style.display = 'none';
+      document.getElementById('aiGenerating').style.display = 'block';
+      btn.style.display = 'none';
+    }
+
+    const r = await fetch('/api/ai-agent/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId: empId })
+    });
+
+    if (r.ok) {
+      const d = await r.json();
+      updateAiToggleUI(d.active, d.active ? Date.now() : null);
+      if (!d.active) loadAiSummaries();
+    } else {
+      const d = await r.json();
+      alert(d.error || 'Failed to toggle AI agent');
+      // Restore UI
+      onAiEmpChange();
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+    onAiEmpChange();
+  }
+
+  btn.disabled = false;
+  btn.style.display = 'inline-block';
+  document.getElementById('aiGenerating').style.display = 'none';
+}
+
+async function loadAiSummaries() {
+  try {
+    const r = await fetch('/api/ai-summaries');
+    const data = await r.json();
+    renderAiSummaries(data);
+  } catch(e) { console.error('AI summaries error:', e); }
+}
+
+function renderAiSummaries(data) {
+  const el = document.getElementById('aiSummaryList');
+  document.getElementById('aiSummaryCount').textContent = data.length + ' summaries';
+  if (!data.length) {
+    el.innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No AI summaries yet. Start monitoring an employee to generate one.</p>';
+    return;
+  }
+  el.innerHTML = data.map(s =>
+    '<div style="padding:16px 20px;border-bottom:1px solid var(--border)">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">' +
+    '<div>' +
+    '<strong style="font-size:15px;color:var(--primary)">' + esc(s.employeeName) + '</strong>' +
+    '<div style="font-size:11px;color:var(--muted);margin-top:2px">' +
+    new Date(s.monitoringStart).toLocaleString() + ' → ' + new Date(s.monitoringEnd).toLocaleString() +
+    '</div>' +
+    '</div>' +
+    '<button class="btn-sm btn-danger" onclick="deleteAiSummary(\'' + esc(s.id) + '\')">🗑️</button>' +
+    '</div>' +
+    '<div style="background:#f0f4ff;border-radius:8px;padding:12px 16px;margin-bottom:10px">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px">📝 AI Summary</div>' +
+    '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap">' + esc(s.summary) + '</div>' +
+    '</div>' +
+    '<details style="margin-bottom:6px">' +
+    '<summary style="font-size:12px;color:var(--muted);cursor:pointer;font-weight:600">📱 App Usage Analysis</summary>' +
+    '<div style="font-size:13px;padding:10px 0;line-height:1.5;white-space:pre-wrap">' + esc(s.appAnalysis) + '</div>' +
+    '</details>' +
+    '<details>' +
+    '<summary style="font-size:12px;color:var(--muted);cursor:pointer;font-weight:600">🎙️ Voice Analysis</summary>' +
+    '<div style="font-size:13px;padding:10px 0;line-height:1.5;white-space:pre-wrap">' + esc(s.voiceAnalysis) + '</div>' +
+    '</details>' +
+    '<div style="font-size:11px;color:var(--muted);margin-top:8px">Generated: ' + new Date(s.createdAt).toLocaleString() + '</div>' +
+    '</div>'
+  ).join('');
+}
+
+async function deleteAiSummary(id) {
+  if (!confirm('Delete this AI summary?')) return;
+  await fetch('/api/ai-summaries/' + encodeURIComponent(id), { method: 'DELETE' });
+  loadAiSummaries();
+}
+
+socket.on('ai_agent_toggled', (data) => {
+  const sel = document.getElementById('aiEmpSel').value;
+  if (sel === data.employeeId) {
+    if (data.generating) {
+      document.getElementById('aiAgentStatus').style.display = 'none';
+      document.getElementById('aiGenerating').style.display = 'block';
+      document.getElementById('aiToggleBtn').style.display = 'none';
+    } else {
+      updateAiToggleUI(data.active, data.active ? Date.now() : null);
+      document.getElementById('aiToggleBtn').style.display = 'inline-block';
+      document.getElementById('aiGenerating').style.display = 'none';
+    }
+  }
+});
+
+socket.on('ai_summary_ready', () => loadAiSummaries());
+
+// Load summaries on init
+loadAiSummaries();
 </script>
 </body>
 </html>
