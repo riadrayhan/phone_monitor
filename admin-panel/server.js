@@ -349,48 +349,71 @@ async function generateBothSummaries(employeeId, state) {
     }
 
     if (voiceText) {
-        // Agent: Voice Content Analyst
-        console.log('Running Voice Content Analyst Agent...');
-        const voiceAgent = await groq.chat.completions.create({
+        // Step 1: Extract exact conversation content line by line
+        console.log('Running Step 1: Extract exact conversation lines...');
+        const step1 = await groq.chat.completions.create({
             model: 'llama-3.3-70b-versatile',
             messages: [
                 {
                     role: 'system',
-                    content: `তুমি একজন বাংলা ভাষার কথোপকথন বিশ্লেষক AI। তোমার কাজ হলো transcribed audio থেকে হুবহু কি কি কথা হয়েছে সেটা বের করা।
+                    content: `তুমি একটি transcription cleaner। তোমার একমাত্র কাজ হলো নিচের transcribed audio text থেকে প্রতিটি কথা/বাক্য আলাদা লাইনে বের করা।
 
-গুরুত্বপূর্ণ নিয়ম:
-- সম্পূর্ণ বাংলায় লিখবে
-- প্রথমে কথোপকথনের প্রতিটি বিষয় আলাদা আলাদা লাইনে লিখবে — ঠিক যা বলা হয়েছে তাই
-- উদাহরণ: "একজন বলেছে আজ ঘুরতে যাবো। আরেকজন বলেছে না, আজ না কাল যাবো।"
-- টাকা পয়সার কথা হলে — কত টাকা, কিসের জন্য, কে কাকে দেবে সব লিখবে
-- কোথাও যাওয়ার কথা হলে — কোথায়, কখন, কার সাথে লিখবে
-- খাবার, পানি, জিনিসপত্র নিয়ে কথা হলে — হুবহু কি বলা হয়েছে লিখবে
-- কখনোই অস্পষ্ট বা সাধারণ কথা লিখবে না যেমন "ব্যক্তিগত বিষয়ে আলোচনা হয়েছে" বা "আবেগীয় অভিব্যক্তি ছিল"
-- কখনোই tone, context, theme নিয়ে analysis করবে না
+নিয়ম:
+- transcription এ যা যা বলা হয়েছে, প্রতিটি কথা আলাদা bullet point এ লিখবে
+- যেমন কেউ বলেছে "আজ ঘুরতে যাবো" — সেটা লিখবে: • একজন বলেছে আজ ঘুরতে যাবো
+- যেমন কেউ বলেছে "পানি লাগবে" — সেটা লিখবে: • একজন বলেছে পানি লাগবে
+- যেমন কেউ বলেছে "৫০০ টাকা দিতে হবে" — সেটা লিখবে: • একজন বলেছে ৫০০ টাকা দিতে হবে
+- transcription এ যে শব্দ আছে সেই শব্দই ব্যবহার করবে, নিজে থেকে কিছু বানাবে না
+- কোনো analysis, opinion, theme, tone, context লিখবে না
+- শুধু bullet points, অন্য কিছু না
 
-ফরম্যাট:
-
-**📝 কথোপকথনের বিস্তারিত:**
-• [হুবহু কি বলা হয়েছে — লাইন ১]
-• [হুবহু কি বলা হয়েছে — লাইন ২]
-• [হুবহু কি বলা হয়েছে — লাইন ৩]
-...
-
-**📌 সারসংক্ষেপ:**
-• [উপরের কথোপকথনের উপর ভিত্তি করে ২-৩ লাইনে মূল বিষয় কি ছিল সেটা লিখবে]
-
-শুধুমাত্র যা বলা হয়েছে তাই লিখবে। অতিরিক্ত কোনো মন্তব্য বা বিশ্লেষণ করবে না।`
+উদাহরণ output:
+• একজন বলেছে আজ বাজারে যেতে হবে
+• আরেকজন বলেছে না আজ না, কাল যাবো
+• একজন বলেছে চাল আর ডাল কিনতে হবে
+• একজন জিজ্ঞেস করেছে কত টাকা লাগবে
+• আরেকজন বলেছে ৫০০ টাকা লাগবে মনে হয়
+• একজন বলেছে ঠিক আছে কাল সকালে যাবো`
                 },
                 {
                     role: 'user',
-                    content: `Employee: ${employeeName}\nMonitoring Period: ${monitoringStart.toLocaleString()} to ${monitoringEnd.toLocaleString()}\nTotal Audio Files Analyzed: ${recentVoices.length}\n\n--- TRANSCRIBED AUDIO ---\n${voiceText}`
+                    content: `এই transcribed audio থেকে প্রতিটি কথা bullet point এ বের করো:\n\n${voiceText}`
                 }
             ],
-            max_tokens: 1200,
+            max_tokens: 1500,
+            temperature: 0.1
+        });
+        const extractedLines = step1.choices[0].message.content;
+        console.log('Step 1 done. Extracted lines.');
+
+        // Step 2: Create short summary based on extracted lines
+        console.log('Running Step 2: Create summary from extracted lines...');
+        const step2 = await groq.chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+                {
+                    role: 'system',
+                    content: `তুমি একজন সারসংক্ষেপ লেখক। নিচে একটি কথোপকথনের bullet points দেওয়া আছে। তোমার কাজ হলো এই কথাগুলো পড়ে ২-৪ লাইনে বলা — ঠিক কি কি বিষয়ে কথা হয়েছে।
+
+নিয়ম:
+- specific বিষয় উল্লেখ করবে, যেমন: "ঘুরতে যাওয়া নিয়ে কথা হয়েছে — একজন আজ যেতে চেয়েছে, আরেকজন কাল যেতে চেয়েছে"
+- টাকা, জায়গা, সময়, মানুষের নাম — যা যা আছে সব mention করবে
+- কখনোই generic কথা লিখবে না যেমন "ব্যক্তিগত বিষয়ে আলোচনা হয়েছে" বা "আবেগীয় কথোপকথন হয়েছে"
+- বাংলায় লিখবে`
+                },
+                {
+                    role: 'user',
+                    content: `এই কথোপকথনের সারসংক্ষেপ লিখো:\n\n${extractedLines}`
+                }
+            ],
+            max_tokens: 400,
             temperature: 0.2
         });
-        const voiceSummaryText = voiceAgent.choices[0].message.content;
-        console.log('Voice Agent done.');
+        const shortSummary = step2.choices[0].message.content;
+        console.log('Step 2 done.');
+
+        // Combine both into final output
+        const voiceSummaryText = `**📝 কথোপকথনের বিস্তারিত:**\n${extractedLines}\n\n**📌 সারসংক্ষেপ:**\n${shortSummary}`;
 
         const voiceSummary = {
             id: Date.now().toString() + '_voice',
