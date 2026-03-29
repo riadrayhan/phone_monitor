@@ -434,20 +434,31 @@
             <div id="aiMonitoringSince" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
           </div>
           <div id="aiGenerating" style="display:none;padding:14px 18px;border-radius:10px;background:#fff3e0;border:1px solid #ffe0b2;font-size:14px;text-align:center">
-            <strong>⏳ Generating AI Summary...</strong>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px">Running 3 AI agents: App Analyst → Voice Analyst → Summary Compiler</div>
+            <strong>⏳ Generating AI Summaries...</strong>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">Running 2 AI agents: Voice Analyst + App Usage Analyst</div>
           </div>
         </div>
       </div>
 
-      <!-- Summaries List -->
+      <!-- Voice Analysis Summaries -->
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header">
+          <h3>🎙️ Voice / Conversation Analysis</h3>
+          <span id="voiceSummaryCount" style="font-size:12px;color:var(--muted)">0 summaries</span>
+        </div>
+        <div id="voiceSummaryList" style="max-height:500px;overflow-y:auto">
+          <p style="padding:20px;color:var(--muted);text-align:center">No voice analysis yet. Start monitoring to generate one.</p>
+        </div>
+      </div>
+
+      <!-- App Usage Summaries -->
       <div class="card">
         <div class="card-header">
-          <h3>📊 AI Summaries</h3>
-          <span id="aiSummaryCount" style="font-size:12px;color:var(--muted)">0 summaries</span>
+          <h3>📱 App Usage Summary</h3>
+          <span id="appSummaryCount" style="font-size:12px;color:var(--muted)">0 summaries</span>
         </div>
-        <div id="aiSummaryList" style="max-height:600px;overflow-y:auto">
-          <p style="padding:20px;color:var(--muted);text-align:center">No AI summaries yet. Start monitoring an employee to generate one.</p>
+        <div id="appSummaryList" style="max-height:500px;overflow-y:auto">
+          <p style="padding:20px;color:var(--muted);text-align:center">No app usage analysis yet. Start monitoring to generate one.</p>
         </div>
       </div>
     </div>
@@ -1107,38 +1118,66 @@ async function loadAiSummaries() {
 }
 
 function renderAiSummaries(data) {
-  const el = document.getElementById('aiSummaryList');
-  document.getElementById('aiSummaryCount').textContent = data.length + ' summaries';
-  if (!data.length) {
-    el.innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No AI summaries yet. Start monitoring an employee to generate one.</p>';
-    return;
+  const voiceData = data.filter(s => s.type === 'voice');
+  const appData = data.filter(s => s.type === 'appusage');
+
+  // Voice summaries
+  const voiceEl = document.getElementById('voiceSummaryList');
+  document.getElementById('voiceSummaryCount').textContent = voiceData.length + ' summaries';
+  if (!voiceData.length) {
+    voiceEl.innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No voice analysis yet. Start monitoring to generate one.</p>';
+  } else {
+    voiceEl.innerHTML = voiceData.map(s =>
+      '<div style="padding:16px 20px;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">' +
+      '<div>' +
+      '<strong style="font-size:15px;color:var(--primary)">' + esc(s.employeeName) + '</strong>' +
+      '<span style="font-size:11px;color:var(--muted);margin-left:8px">🎙️ ' + (s.audioFilesAnalyzed || 0) + ' audio files analyzed</span>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:2px">' +
+      new Date(s.monitoringStart).toLocaleString() + ' → ' + new Date(s.monitoringEnd).toLocaleString() +
+      '</div>' +
+      '</div>' +
+      '<button class="btn-sm btn-danger" onclick="deleteAiSummary(\'' + esc(s.id) + '\')">🗑️</button>' +
+      '</div>' +
+      '<div style="background:#fce4ec;border-radius:8px;padding:12px 16px;margin-bottom:8px">' +
+      '<div style="font-size:12px;font-weight:700;color:#c62828;margin-bottom:6px">🎙️ Voice / Conversation Analysis</div>' +
+      '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap">' + esc(s.summary) + '</div>' +
+      '</div>' +
+      (s.rawTranscription ? '<details><summary style="font-size:12px;color:var(--muted);cursor:pointer;font-weight:600">📜 Raw Transcription</summary>' +
+      '<div style="font-size:12px;padding:10px 0;line-height:1.5;white-space:pre-wrap;color:#555;max-height:200px;overflow-y:auto">' + esc(s.rawTranscription) + '</div></details>' : '') +
+      '<div style="font-size:11px;color:var(--muted);margin-top:8px">Generated: ' + new Date(s.createdAt).toLocaleString() + '</div>' +
+      '</div>'
+    ).join('');
   }
-  el.innerHTML = data.map(s =>
-    '<div style="padding:16px 20px;border-bottom:1px solid var(--border)">' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">' +
-    '<div>' +
-    '<strong style="font-size:15px;color:var(--primary)">' + esc(s.employeeName) + '</strong>' +
-    '<div style="font-size:11px;color:var(--muted);margin-top:2px">' +
-    new Date(s.monitoringStart).toLocaleString() + ' → ' + new Date(s.monitoringEnd).toLocaleString() +
-    '</div>' +
-    '</div>' +
-    '<button class="btn-sm btn-danger" onclick="deleteAiSummary(\'' + esc(s.id) + '\')">🗑️</button>' +
-    '</div>' +
-    '<div style="background:#f0f4ff;border-radius:8px;padding:12px 16px;margin-bottom:10px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px">📝 AI Summary</div>' +
-    '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap">' + esc(s.summary) + '</div>' +
-    '</div>' +
-    '<details style="margin-bottom:6px">' +
-    '<summary style="font-size:12px;color:var(--muted);cursor:pointer;font-weight:600">📱 App Usage Analysis</summary>' +
-    '<div style="font-size:13px;padding:10px 0;line-height:1.5;white-space:pre-wrap">' + esc(s.appAnalysis) + '</div>' +
-    '</details>' +
-    '<details>' +
-    '<summary style="font-size:12px;color:var(--muted);cursor:pointer;font-weight:600">🎙️ Voice Analysis</summary>' +
-    '<div style="font-size:13px;padding:10px 0;line-height:1.5;white-space:pre-wrap">' + esc(s.voiceAnalysis) + '</div>' +
-    '</details>' +
-    '<div style="font-size:11px;color:var(--muted);margin-top:8px">Generated: ' + new Date(s.createdAt).toLocaleString() + '</div>' +
-    '</div>'
-  ).join('');
+
+  // App usage summaries
+  const appEl = document.getElementById('appSummaryList');
+  document.getElementById('appSummaryCount').textContent = appData.length + ' summaries';
+  if (!appData.length) {
+    appEl.innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No app usage analysis yet. Start monitoring to generate one.</p>';
+  } else {
+    appEl.innerHTML = appData.map(s =>
+      '<div style="padding:16px 20px;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">' +
+      '<div>' +
+      '<strong style="font-size:15px;color:var(--primary)">' + esc(s.employeeName) + '</strong>' +
+      '<span style="font-size:11px;color:var(--muted);margin-left:8px">📱 ' + (s.appCount || 0) + ' apps · ' + esc(s.totalScreenTime || '0 min') + ' total</span>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:2px">' +
+      new Date(s.monitoringStart).toLocaleString() + ' → ' + new Date(s.monitoringEnd).toLocaleString() +
+      '</div>' +
+      '</div>' +
+      '<button class="btn-sm btn-danger" onclick="deleteAiSummary(\'' + esc(s.id) + '\')">🗑️</button>' +
+      '</div>' +
+      '<div style="background:#e3f2fd;border-radius:8px;padding:12px 16px;margin-bottom:8px">' +
+      '<div style="font-size:12px;font-weight:700;color:#1565c0;margin-bottom:6px">📱 App Usage Summary</div>' +
+      '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap">' + esc(s.summary) + '</div>' +
+      '</div>' +
+      (s.rawUsageData && s.rawUsageData.length ? '<details><summary style="font-size:12px;color:var(--muted);cursor:pointer;font-weight:600">📊 Raw Usage Data</summary>' +
+      '<div style="font-size:12px;padding:10px 0;line-height:1.8">' + s.rawUsageData.map(l => '<div style="padding:2px 0">• ' + esc(l) + '</div>').join('') + '</div></details>' : '') +
+      '<div style="font-size:11px;color:var(--muted);margin-top:8px">Generated: ' + new Date(s.createdAt).toLocaleString() + '</div>' +
+      '</div>'
+    ).join('');
+  }
 }
 
 async function deleteAiSummary(id) {

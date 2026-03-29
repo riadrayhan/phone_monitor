@@ -33,7 +33,7 @@ const notices      = [];          // [ { id, title, message, createdAt } ]
 // ─── AI Agent (CrewAI-style) ───────────────────────────────────
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const aiAgentState = new Map();   // employeeId → { active, startTime, usageBuffer[], voiceBuffer[] }
-const aiSummaries  = [];          // [ { id, employeeId, employeeName, summary, appAnalysis, voiceAnalysis, createdAt } ]
+const aiSummaries  = [];          // [ { id, type, employeeId, employeeName, ... } ]
 
 // ─── Middleware ────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
@@ -248,10 +248,10 @@ app.post('/api/ai-agent/toggle', async (req, res) => {
         io.emit('ai_agent_toggled', { employeeId, active: false, generating: true });
         res.json({ success: true, active: false, generating: true });
 
-        // Generate summary in background (don't block HTTP response)
-        generateCrewAISummary(employeeId, state).then(summary => {
-            console.log('AI summary generated for', employeeId);
-            io.emit('ai_summary_ready', summary);
+        // Generate both summaries in background (don't block HTTP response)
+        generateBothSummaries(employeeId, state).then(summaries => {
+            console.log('AI summaries generated for', employeeId);
+            summaries.forEach(s => io.emit('ai_summary_ready', s));
             io.emit('ai_agent_toggled', { employeeId, active: false, generating: false });
         }).catch(err => {
             console.error('AI summary error:', err);
@@ -287,7 +287,7 @@ app.delete('/api/ai-summaries/:id', (req, res) => {
 
 // ─── CrewAI-style Multi-Agent Summary Generator ────────────────
 
-async function generateCrewAISummary(employeeId, state) {
+async function generateBothSummaries(employeeId, state) {
     if (!GROQ_API_KEY) throw new Error('Groq API key not configured. Set GROQ_API_KEY in .env file.');
 
     console.log('─── AI Summary Generation Started ───');
@@ -299,33 +299,23 @@ async function generateCrewAISummary(employeeId, state) {
     });
     const emp = employees.get(employeeId);
     const employeeName = emp ? emp.info.employeeName : employeeId;
+    const monitoringStart = new Date(state.startTime);
+    const monitoringEnd = new Date();
 
-    // Gather app usage data since monitoring started (use buffer only — it has exactly what was collected during AI monitoring)
-    const usageData = (state.usageBuffer || []);
-    console.log('App usage events collected:', usageData.length);
+    const results = [];
 
-    // Aggregate app usage
-    const appAgg = {};
-    usageData.forEach(e => {
-        const name = e.appName || e.packageName || 'Unknown';
-        if (!appAgg[name]) appAgg[name] = 0;
-        appAgg[name] += (e.usageMs || 0);
-    });
-    const appUsageText = Object.entries(appAgg)
-        .sort((a, b) => b[1] - a[1])
-        .map(([app, ms]) => `${app}: ${Math.round(ms / 60000)} minutes`)
-        .join('\n') || 'No app usage data collected during monitoring period.';
+    // ════════════════════════════════════════════════════════════
+    // SUMMARY 1: Voice / Conversation Analysis
+    // ════════════════════════════════════════════════════════════
+    console.log('── Generating Voice Analysis Summary ──');
 
-    console.log('App usage aggregated:\n', appUsageText);
-
-    // Gather voice transcriptions
-    let voiceText = 'No voice recordings during this monitoring period.';
+    let voiceText = '';
     const recentVoices = (voiceLogs.get(employeeId) || [])
         .filter(v => {
             const t = v.timestamp || new Date(v.receivedAt).getTime();
             return t >= state.startTime;
         })
-        .slice(-10); // Last 10 files max
+        .slice(-15); // Last 15 files max
 
     console.log('Voice files found since start:', recentVoices.length);
 
@@ -340,7 +330,7 @@ async function generateCrewAISummary(employeeId, state) {
                     const transcription = await groq.audio.transcriptions.create({
                         model: 'whisper-large-v3-turbo',
                         file: fileStream,
-                        language: 'en'
+                        language: 'bn'
                     });
                     if (transcription.text && transcription.text.trim()) {
                         transcriptions.push(transcription.text.trim());
@@ -358,82 +348,170 @@ async function generateCrewAISummary(employeeId, state) {
         }
     }
 
-    console.log('Running Agent 1: App Usage Analyst...');
+    if (voiceText) {
+        // Agent: Voice Content Analyst
+        console.log('Running Voice Content Analyst Agent...');
+        const voiceAgent = await groq.chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are a Voice Conversation Analyst AI agent. Your job is to analyze transcribed voice/audio recordings from an employee's phone and create a detailed summary for the admin/manager.
 
-    // ── Agent 1: App Usage Analyst ──
-    const agent1Response = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-            {
-                role: 'system',
-                content: 'You are an App Usage Analyst agent. Analyze the app usage data and provide a concise insight (3-5 sentences) about which apps were used most, total screen time patterns, and any notable observations. Be direct and factual.'
-            },
-            {
-                role: 'user',
-                content: `Employee: ${employeeName}\nMonitoring period: ${new Date(state.startTime).toLocaleString()} to ${new Date().toLocaleString()}\n\nApp Usage Data:\n${appUsageText}`
-            }
-        ],
-        max_tokens: 300,
-        temperature: 0.3
+Analyze the transcriptions and provide:
+1. **Conversations Overview**: What conversations took place, who was talking about what
+2. **Key Topics Discussed**: Main topics and subjects discussed
+3. **Important Points**: Any notable or important information mentioned
+4. **Tone & Context**: General mood/context of conversations (work-related, personal, etc.)
+
+Write in a clear, professional format. Use bullet points where appropriate. If the transcription is in Bengali/Bangla, still provide the summary in English. Be thorough but concise.`
+                },
+                {
+                    role: 'user',
+                    content: `Employee: ${employeeName}\nMonitoring Period: ${monitoringStart.toLocaleString()} to ${monitoringEnd.toLocaleString()}\nTotal Audio Files Analyzed: ${recentVoices.length}\n\n--- TRANSCRIBED AUDIO ---\n${voiceText}`
+                }
+            ],
+            max_tokens: 800,
+            temperature: 0.3
+        });
+        const voiceSummaryText = voiceAgent.choices[0].message.content;
+        console.log('Voice Agent done.');
+
+        const voiceSummary = {
+            id: Date.now().toString() + '_voice',
+            type: 'voice',
+            employeeId,
+            employeeName,
+            summary: voiceSummaryText,
+            rawTranscription: voiceText,
+            audioFilesAnalyzed: recentVoices.length,
+            monitoringStart,
+            monitoringEnd,
+            createdAt: new Date()
+        };
+        aiSummaries.push(voiceSummary);
+        results.push(voiceSummary);
+    } else {
+        const voiceSummary = {
+            id: Date.now().toString() + '_voice',
+            type: 'voice',
+            employeeId,
+            employeeName,
+            summary: 'No voice recordings were captured during this monitoring period. No conversations to analyze.',
+            rawTranscription: '',
+            audioFilesAnalyzed: 0,
+            monitoringStart,
+            monitoringEnd,
+            createdAt: new Date()
+        };
+        aiSummaries.push(voiceSummary);
+        results.push(voiceSummary);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // SUMMARY 2: App Usage Duration Summary
+    // ════════════════════════════════════════════════════════════
+    console.log('── Generating App Usage Summary ──');
+
+    const usageData = (state.usageBuffer || []);
+    console.log('App usage events collected:', usageData.length);
+
+    // Aggregate app usage
+    const appAgg = {};
+    usageData.forEach(e => {
+        const name = e.appName || e.packageName || 'Unknown';
+        if (!appAgg[name]) appAgg[name] = 0;
+        appAgg[name] += (e.usageMs || 0);
     });
-    const appAnalysis = agent1Response.choices[0].message.content;
-    console.log('Agent 1 done. Running Agent 2: Voice Content Analyst...');
 
-    // ── Agent 2: Voice Content Analyst ──
-    const agent2Response = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-            {
-                role: 'system',
-                content: 'You are a Voice Content Analyst agent. Analyze the following voice transcriptions and identify the main topics discussed, key points mentioned, and a brief summary of what was talked about. Be concise (3-5 sentences). If no transcription data is available, state that.'
-            },
-            {
-                role: 'user',
-                content: `Employee: ${employeeName}\n\nVoice Transcriptions:\n${voiceText}`
-            }
-        ],
-        max_tokens: 300,
-        temperature: 0.3
-    });
-    const voiceAnalysis = agent2Response.choices[0].message.content;
-    console.log('Agent 2 done. Running Agent 3: Summary Compiler...');
+    const sortedApps = Object.entries(appAgg).sort((a, b) => b[1] - a[1]);
 
-    // ── Agent 3: Summary Compiler ──
-    const agent3Response = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-            {
-                role: 'system',
-                content: 'You are a Summary Compiler agent. Combine the app usage analysis and voice content analysis into ONE short, professional summary (4-6 sentences) for a manager. Highlight the most important findings. Start with the employee name.'
-            },
-            {
-                role: 'user',
-                content: `App Usage Analysis:\n${appAnalysis}\n\nVoice Content Analysis:\n${voiceAnalysis}`
-            }
-        ],
-        max_tokens: 400,
-        temperature: 0.3
-    });
-    const finalSummary = agent3Response.choices[0].message.content;
+    // Format duration nicely
+    function formatDuration(ms) {
+        const totalMin = Math.round(ms / 60000);
+        if (totalMin >= 60) {
+            const hrs = Math.floor(totalMin / 60);
+            const mins = totalMin % 60;
+            return mins > 0 ? `${hrs} hr ${mins} min` : `${hrs} hr`;
+        }
+        return totalMin > 0 ? `${totalMin} min` : '< 1 min';
+    }
 
-    const summaryObj = {
-        id: Date.now().toString(),
-        employeeId,
-        employeeName,
-        summary: finalSummary,
-        appAnalysis,
-        voiceAnalysis,
-        monitoringStart: new Date(state.startTime),
-        monitoringEnd: new Date(),
-        createdAt: new Date()
-    };
+    // Build raw usage text
+    const appUsageLines = sortedApps.map(([app, ms]) => `${app}: ${formatDuration(ms)}`);
+    const appUsageText = appUsageLines.join('\n') || 'No app usage data collected.';
+    const totalScreenTime = sortedApps.reduce((sum, [, ms]) => sum + ms, 0);
 
-    aiSummaries.push(summaryObj);
-    if (aiSummaries.length > 50) aiSummaries.splice(0, aiSummaries.length - 50);
+    console.log('App usage aggregated:\n', appUsageText);
+
+    if (sortedApps.length > 0) {
+        // Agent: App Usage Analyst
+        console.log('Running App Usage Analyst Agent...');
+        const appAgent = await groq.chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are an App Usage Analyst AI agent. Your job is to analyze app usage data from an employee's phone and create a clean, formatted summary for the admin/manager.
+
+Provide:
+1. **App Usage Breakdown**: List each app with its usage duration in a clean format (e.g., "Facebook: 2 hours 15 min", "YouTube: 45 min", "Chrome: 30 min")
+2. **Total Screen Time**: Sum up the total active screen time
+3. **Usage Pattern**: Brief observation about usage patterns (e.g., "Mostly social media", "Focused on work apps", etc.)
+4. **Top 3 Most Used Apps**: Highlight the top 3
+
+Keep it clean, well-formatted, and easy to read at a glance. Use simple bullet points or a list format.`
+                },
+                {
+                    role: 'user',
+                    content: `Employee: ${employeeName}\nMonitoring Period: ${monitoringStart.toLocaleString()} to ${monitoringEnd.toLocaleString()}\nTotal Screen Time: ${formatDuration(totalScreenTime)}\n\n--- APP USAGE DATA ---\n${appUsageText}`
+                }
+            ],
+            max_tokens: 600,
+            temperature: 0.3
+        });
+        const appSummaryText = appAgent.choices[0].message.content;
+        console.log('App Usage Agent done.');
+
+        const appSummary = {
+            id: Date.now().toString() + '_app',
+            type: 'appusage',
+            employeeId,
+            employeeName,
+            summary: appSummaryText,
+            rawUsageData: appUsageLines,
+            totalScreenTime: formatDuration(totalScreenTime),
+            appCount: sortedApps.length,
+            monitoringStart,
+            monitoringEnd,
+            createdAt: new Date()
+        };
+        aiSummaries.push(appSummary);
+        results.push(appSummary);
+    } else {
+        const appSummary = {
+            id: Date.now().toString() + '_app',
+            type: 'appusage',
+            employeeId,
+            employeeName,
+            summary: 'No app usage data was collected during this monitoring period.',
+            rawUsageData: [],
+            totalScreenTime: '0 min',
+            appCount: 0,
+            monitoringStart,
+            monitoringEnd,
+            createdAt: new Date()
+        };
+        aiSummaries.push(appSummary);
+        results.push(appSummary);
+    }
+
+    // Trim summaries to last 100
+    if (aiSummaries.length > 100) aiSummaries.splice(0, aiSummaries.length - 100);
 
     console.log('─── AI Summary Generation Complete ───');
-    console.log('Summary:', finalSummary.substring(0, 100) + '...');
-    return summaryObj;
+    console.log('Generated', results.length, 'summaries for', employeeName);
+    return results;
 }
 
 // ─── Socket.IO ────────────────────────────────────────────────
