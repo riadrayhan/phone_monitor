@@ -248,6 +248,7 @@ app.get('/api/debug-transcribe/:empId/:filename', async (req, res) => {
         const result = await groq.audio.transcriptions.create({
             model: 'whisper-large-v3',
             file: stream,
+            language: 'bn',
             temperature: 0
         });
         res.json({
@@ -362,41 +363,18 @@ async function generateBothSummaries(employeeId, state) {
                         continue;
                     }
 
-                    // Try 1: Auto-detect language (no language hint)
-                    let text = '';
-                    try {
-                        const stream1 = fs.createReadStream(filePath);
-                        const result1 = await groq.audio.transcriptions.create({
-                            model: 'whisper-large-v3',
-                            file: stream1,
-                            temperature: 0
-                        });
-                        text = (result1.text || '').trim();
-                        console.log('Auto-detect result:', text.substring(0, 100));
-                    } catch (e1) {
-                        console.warn('Auto-detect failed:', e1.message);
-                    }
-
-                    // If auto-detect gave empty/very short result, try with Bengali hint
-                    if (text.length < 5) {
-                        try {
-                            const stream2 = fs.createReadStream(filePath);
-                            const result2 = await groq.audio.transcriptions.create({
-                                model: 'whisper-large-v3',
-                                file: stream2,
-                                language: 'bn',
-                                temperature: 0
-                            });
-                            text = (result2.text || '').trim();
-                            console.log('Bengali hint result:', text.substring(0, 100));
-                        } catch (e2) {
-                            console.warn('Bengali hint failed:', e2.message);
-                        }
-                    }
+                    const stream = fs.createReadStream(filePath);
+                    const result = await groq.audio.transcriptions.create({
+                        model: 'whisper-large-v3',
+                        file: stream,
+                        language: 'bn',
+                        temperature: 0
+                    });
+                    const text = (result.text || '').trim();
+                    console.log('Transcription [' + text.length + ' chars]:', text.substring(0, 100));
 
                     if (text && text.length > 3) {
                         transcriptions.push(text);
-                        console.log('Transcription OK:', text.substring(0, 80) + '...');
                     } else {
                         console.warn('Empty/too short transcription for', vf.filename);
                     }
