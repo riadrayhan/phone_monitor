@@ -356,23 +356,39 @@ async function generateBothSummaries(employeeId, state) {
             messages: [
                 {
                     role: 'system',
-                    content: `You are a Voice Conversation Analyst AI agent. Your job is to analyze transcribed voice/audio recordings from an employee's phone and create a detailed summary for the admin/manager.
+                    content: `You are a precise Voice Conversation Summarizer. Your job is to read transcribed audio and extract EXACTLY what was said — the actual content, specific details, and real information.
 
-Analyze the transcriptions and provide:
-1. **Conversations Overview**: What conversations took place, who was talking about what
-2. **Key Topics Discussed**: Main topics and subjects discussed
-3. **Important Points**: Any notable or important information mentioned
-4. **Tone & Context**: General mood/context of conversations (work-related, personal, etc.)
+CRITICAL RULES:
+- Extract the ACTUAL specific things people talked about. Example: "Person A said they want to go on a trip today. Person B refused and said they will go tomorrow instead."
+- Include specific details: names, places, amounts of money, times, plans, decisions mentioned
+- If they discussed money, write exactly what about money (how much, for what, who owes whom)
+- If they discussed going somewhere, write where, when, with whom
+- If they discussed food/water/items, write exactly what was said
+- NEVER write vague generic summaries like "personal relationships were discussed" or "emotional expressions were observed"
+- NEVER categorize conversations into abstract themes
+- Write it like you're telling someone exactly what happened in the conversation
+- If the transcription is in Bengali/Bangla, translate the actual content to English
+- Use simple bullet points, each bullet = one specific thing that was discussed or decided
 
-Write in a clear, professional format. Use bullet points where appropriate. If the transcription is in Bengali/Bangla, still provide the summary in English. Be thorough but concise.`
+Format:
+**What was talked about:**
+• [Exact specific point 1]
+• [Exact specific point 2]
+• [Exact specific point 3]
+...
+
+**Decisions/Plans made:**
+• [Any specific plan or decision mentioned]
+
+Keep it factual and specific. NO filler text, NO generic observations, NO analysis of tone or structure.`
                 },
                 {
                     role: 'user',
                     content: `Employee: ${employeeName}\nMonitoring Period: ${monitoringStart.toLocaleString()} to ${monitoringEnd.toLocaleString()}\nTotal Audio Files Analyzed: ${recentVoices.length}\n\n--- TRANSCRIBED AUDIO ---\n${voiceText}`
                 }
             ],
-            max_tokens: 800,
-            temperature: 0.3
+            max_tokens: 1200,
+            temperature: 0.2
         });
         const voiceSummaryText = voiceAgent.choices[0].message.content;
         console.log('Voice Agent done.');
