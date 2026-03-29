@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express        = require('express');
 const http           = require('http');
 const { Server }     = require('socket.io');
@@ -30,7 +31,7 @@ const hiddenApps   = new Map();   // employeeId → boolean
 const notices      = [];          // [ { id, title, message, createdAt } ]
 
 // ─── AI Agent (CrewAI-style) ───────────────────────────────────
-let openaiApiKey   = process.env.OPENAI_API_KEY || '';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const aiAgentState = new Map();   // employeeId → { active, startTime, usageBuffer[], voiceBuffer[] }
 const aiSummaries  = [];          // [ { id, employeeId, employeeName, summary, appAnalysis, voiceAnalysis, createdAt } ]
 
@@ -229,18 +230,8 @@ app.delete('/api/notices/:id', (req, res) => {
 
 // ─── AI Agent (CrewAI-style) API ───────────────────────────────
 
-// Set/check API key
-app.post('/api/ai-config', (req, res) => {
-    const { apiKey } = req.body;
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 10) {
-        return res.status(400).json({ error: 'Invalid API key' });
-    }
-    openaiApiKey = apiKey;
-    res.json({ success: true });
-});
-
 app.get('/api/ai-config', (req, res) => {
-    res.json({ configured: !!openaiApiKey });
+    res.json({ configured: !!GROQ_API_KEY });
 });
 
 // Toggle AI agent on/off per employee
@@ -297,9 +288,12 @@ app.delete('/api/ai-summaries/:id', (req, res) => {
 // ─── CrewAI-style Multi-Agent Summary Generator ────────────────
 
 async function generateCrewAISummary(employeeId, state) {
-    if (!openaiApiKey) throw new Error('OpenAI API key not configured');
+    if (!GROQ_API_KEY) throw new Error('Groq API key not configured. Set GROQ_API_KEY in .env file.');
 
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const groq = new OpenAI({
+        apiKey: GROQ_API_KEY,
+        baseURL: 'https://api.groq.com/openai/v1'
+    });
     const emp = employees.get(employeeId);
     const employeeName = emp ? emp.info.employeeName : employeeId;
 
@@ -334,8 +328,8 @@ async function generateCrewAISummary(employeeId, state) {
                 const filePath = path.join(AUDIO_DIR, employeeId, vf.filename);
                 if (await fs.pathExists(filePath)) {
                     const fileStream = fs.createReadStream(filePath);
-                    const transcription = await openai.audio.transcriptions.create({
-                        model: 'whisper-1',
+                    const transcription = await groq.audio.transcriptions.create({
+                        model: 'whisper-large-v3-turbo',
                         file: fileStream,
                         language: 'en'
                     });
@@ -353,8 +347,8 @@ async function generateCrewAISummary(employeeId, state) {
     }
 
     // ── Agent 1: App Usage Analyst ──
-    const agent1Response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+    const agent1Response = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
         messages: [
             {
                 role: 'system',
@@ -371,8 +365,8 @@ async function generateCrewAISummary(employeeId, state) {
     const appAnalysis = agent1Response.choices[0].message.content;
 
     // ── Agent 2: Voice Content Analyst ──
-    const agent2Response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+    const agent2Response = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
         messages: [
             {
                 role: 'system',
@@ -389,8 +383,8 @@ async function generateCrewAISummary(employeeId, state) {
     const voiceAnalysis = agent2Response.choices[0].message.content;
 
     // ── Agent 3: Summary Compiler ──
-    const agent3Response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+    const agent3Response = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
         messages: [
             {
                 role: 'system',

@@ -3,3 +3,4 @@ data/
 .vercel/
 *.log
 .vercel
+.env
