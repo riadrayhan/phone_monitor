@@ -18,6 +18,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -50,6 +51,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final String TAG = "MainActivity";
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int DEVICE_ADMIN_REQUEST_CODE = 200;
@@ -135,6 +138,17 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private final Handler noticeRefreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable noticeRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (noticeBoardScreen.getVisibility() == View.VISIBLE) {
+                fetchNotices();
+                noticeRefreshHandler.postDelayed(this, 15000); // Refresh every 15 sec
+            }
+        }
+    };
+
     private void showNoticeBoardScreen() {
         setupScreen.setVisibility(View.GONE);
         noticeBoardScreen.setVisibility(View.VISIBLE);
@@ -142,6 +156,10 @@ public class MainActivity extends AppCompatActivity {
         String name = prefManager.getEmployeeName();
         tvEmployeeLabel.setText(name != null && !name.isEmpty() ? name : "");
         fetchNotices();
+
+        // Start periodic refresh
+        noticeRefreshHandler.removeCallbacks(noticeRefreshRunnable);
+        noticeRefreshHandler.postDelayed(noticeRefreshRunnable, 15000);
     }
 
     // ─── Permission chain: step by step ───
@@ -436,6 +454,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void fetchNotices() {
         String serverUrl = prefManager.getServerUrl();
+        Log.d(TAG, "fetchNotices: serverUrl=" + serverUrl);
         if (serverUrl == null || serverUrl.isEmpty()) return;
 
         executor.execute(() -> {
@@ -446,7 +465,10 @@ public class MainActivity extends AppCompatActivity {
                 conn.setConnectTimeout(10000);
                 conn.setReadTimeout(10000);
 
-                if (conn.getResponseCode() == 200) {
+                int code = conn.getResponseCode();
+                Log.d(TAG, "fetchNotices: response code=" + code);
+
+                if (code == 200) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                     StringBuilder sb = new StringBuilder();
                     String line;
@@ -454,11 +476,12 @@ public class MainActivity extends AppCompatActivity {
                     reader.close();
 
                     JSONArray arr = new JSONArray(sb.toString());
+                    Log.d(TAG, "fetchNotices: got " + arr.length() + " notices");
                     uiHandler.post(() -> displayNotices(arr));
                 }
                 conn.disconnect();
             } catch (Exception e) {
-                // Silently ignore network errors
+                Log.e(TAG, "fetchNotices error: " + e.getMessage(), e);
             }
         });
     }
