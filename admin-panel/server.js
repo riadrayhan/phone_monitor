@@ -391,6 +391,49 @@ async function generateBothSummaries(employeeId, state) {
     }
 
     if (voiceText) {
+        // Step 0: Clean up garbled Whisper output using LLM
+        console.log('Running Step 0: LLM cleanup of Whisper output...');
+        try {
+            const cleanupResult = await groq.chat.completions.create({
+                model: 'llama-3.3-70b-versatile',
+                messages: [
+                    {
+                        role: 'system',
+                        content: `তুমি একজন বাংলা ভাষা সংশোধক। তোমাকে Whisper AI এর তৈরি করা বাংলা transcription দেওয়া হবে যেটা অনেক সময় ভুল বা অস্পষ্ট হয়।
+
+তোমার কাজ:
+1. ভুল বানান বা অর্থহীন শব্দগুলো থেকে সঠিক বাংলা শব্দ অনুমান করো
+2. যে শব্দগুলো বোঝা যাচ্ছে সেগুলো ঠিক রাখো
+3. যে অংশ পুরোপুরি অর্থহীন, সেটা [অস্পষ্ট] লিখো
+4. বাক্য যতটা সম্ভব পড়ার যোগ্য করো
+
+উদাহরণ:
+ভুল: "আমাদ ইবিষেন পাছ ভাব্য়ান করতে পারে"
+সঠিক: "আমাদের [অস্পষ্ট] পাশ [অস্পষ্ট] করতে পারে"
+
+ভুল: "সুতুনির ত্রিক্ষন সাথ করা পারা যায়"
+সঠিক: "[অস্পষ্ট] সাথে করা পারা যায়"
+
+শুধু পরিষ্কার করা text দাও, অন্য কোনো মন্তব্য করো না।`
+                    },
+                    {
+                        role: 'user',
+                        content: voiceText
+                    }
+                ],
+                max_tokens: 1500,
+                temperature: 0.1
+            });
+            const cleanedText = (cleanupResult.choices[0].message.content || '').trim();
+            if (cleanedText.length > 10) {
+                console.log('Cleanup done. Before:', voiceText.length, 'chars. After:', cleanedText.length, 'chars');
+                console.log('Cleaned text:', cleanedText.substring(0, 200));
+                voiceText = cleanedText;
+            }
+        } catch (cleanupErr) {
+            console.warn('Cleanup step failed, using raw transcription:', cleanupErr.message);
+        }
+
         // Step 1: Extract exact conversation content line by line
         console.log('Running Step 1: Extract exact conversation lines...');
         const step1 = await groq.chat.completions.create({

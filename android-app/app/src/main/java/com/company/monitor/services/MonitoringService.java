@@ -54,7 +54,7 @@ public class MonitoringService extends Service {
     private AudioRecord audioRecord;
     private volatile boolean isStreaming = false;
     private Thread audioThread;
-    private static final int SAMPLE_RATE = 16000;
+    private static final int SAMPLE_RATE = 44100;
     private static final int AUDIO_CHANNELS = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT;
 
