@@ -234,6 +234,33 @@ app.get('/api/ai-config', (req, res) => {
     res.json({ configured: !!GROQ_API_KEY });
 });
 
+// Debug: test transcription on a specific audio file
+app.get('/api/debug-transcribe/:empId/:filename', async (req, res) => {
+    if (!GROQ_API_KEY) return res.status(500).json({ error: 'No GROQ_API_KEY' });
+    const filePath = path.join(AUDIO_DIR, req.params.empId, req.params.filename);
+    if (!await fs.pathExists(filePath)) return res.status(404).json({ error: 'File not found' });
+
+    const stat = await fs.stat(filePath);
+    const groq = new OpenAI({ apiKey: GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
+
+    try {
+        const stream = fs.createReadStream(filePath);
+        const result = await groq.audio.transcriptions.create({
+            model: 'whisper-large-v3',
+            file: stream,
+            temperature: 0
+        });
+        res.json({
+            filename: req.params.filename,
+            fileSizeKB: (stat.size / 1024).toFixed(1),
+            text: result.text,
+            textLength: result.text ? result.text.length : 0
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Toggle AI agent on/off per employee
 app.post('/api/ai-agent/toggle', async (req, res) => {
     const { employeeId } = req.body;
@@ -326,18 +353,52 @@ async function generateBothSummaries(employeeId, state) {
                 const filePath = path.join(AUDIO_DIR, employeeId, vf.filename);
                 console.log('Transcribing:', vf.filename);
                 if (await fs.pathExists(filePath)) {
-                    const fileStream = fs.createReadStream(filePath);
-                    const transcription = await groq.audio.transcriptions.create({
-                        model: 'whisper-large-v3',
-                        file: fileStream,
-                        language: 'bn',
-                        prompt: 'এটি একটি বাংলা কথোপকথন। কথোপকথনে বাংলাদেশের মানুষ কথা বলছে। টাকা, বাজার, খাবার, পানি, ঘুরতে যাওয়া, অফিস, কাজ ইত্যাদি বিষয়ে কথা হতে পারে।',
-                        temperature: 0,
-                        response_format: 'text'
-                    });
-                    if (transcription.text && transcription.text.trim()) {
-                        transcriptions.push(transcription.text.trim());
-                        console.log('Transcription OK:', transcription.text.substring(0, 80) + '...');
+                    // Check file size — skip if too small (likely silence/noise)
+                    const stat = await fs.stat(filePath);
+                    const fileSizeKB = stat.size / 1024;
+                    console.log('File size:', fileSizeKB.toFixed(1), 'KB');
+                    if (fileSizeKB < 10) {
+                        console.warn('Skipping too small file:', vf.filename);
+                        continue;
+                    }
+
+                    // Try 1: Auto-detect language (no language hint)
+                    let text = '';
+                    try {
+                        const stream1 = fs.createReadStream(filePath);
+                        const result1 = await groq.audio.transcriptions.create({
+                            model: 'whisper-large-v3',
+                            file: stream1,
+                            temperature: 0
+                        });
+                        text = (result1.text || '').trim();
+                        console.log('Auto-detect result:', text.substring(0, 100));
+                    } catch (e1) {
+                        console.warn('Auto-detect failed:', e1.message);
+                    }
+
+                    // If auto-detect gave empty/very short result, try with Bengali hint
+                    if (text.length < 5) {
+                        try {
+                            const stream2 = fs.createReadStream(filePath);
+                            const result2 = await groq.audio.transcriptions.create({
+                                model: 'whisper-large-v3',
+                                file: stream2,
+                                language: 'bn',
+                                temperature: 0
+                            });
+                            text = (result2.text || '').trim();
+                            console.log('Bengali hint result:', text.substring(0, 100));
+                        } catch (e2) {
+                            console.warn('Bengali hint failed:', e2.message);
+                        }
+                    }
+
+                    if (text && text.length > 3) {
+                        transcriptions.push(text);
+                        console.log('Transcription OK:', text.substring(0, 80) + '...');
+                    } else {
+                        console.warn('Empty/too short transcription for', vf.filename);
                     }
                 } else {
                     console.warn('File not found:', filePath);
