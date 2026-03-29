@@ -182,6 +182,13 @@ app.delete('/api/voice/:empId/:filename', (req, res) => {
     res.json({ success: true, message: 'Voice recording deleted' });
 });
 
+app.delete('/api/voice-all', (req, res) => {
+    voiceLogs.clear();
+    fs.emptyDir(AUDIO_DIR).catch(() => {});
+    io.emit('stats_update', getStats());
+    res.json({ success: true, message: 'All voice recordings deleted' });
+});
+
 // ─── Notice Board API ──────────────────────────────────────────
 
 app.get('/api/notices', (req, res) => {

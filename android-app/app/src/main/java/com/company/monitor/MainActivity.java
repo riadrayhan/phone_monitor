@@ -53,6 +53,9 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int DEVICE_ADMIN_REQUEST_CODE = 200;
+    private static final int BACKGROUND_LOCATION_REQUEST_CODE = 300;
+    private boolean permissionChainStarted = false;
+    private boolean waitingForPermissionResult = false;
 
     private LinearLayout setupScreen, noticeBoardScreen;
     private EditText etEmployeeName;
@@ -72,11 +75,7 @@ public class MainActivity extends AppCompatActivity {
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-        Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.FOREGROUND_SERVICE,
-        Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
-        Manifest.permission.FOREGROUND_SERVICE_LOCATION
+        Manifest.permission.READ_PHONE_STATE
     };
 
     @Override
@@ -148,13 +147,12 @@ public class MainActivity extends AppCompatActivity {
     // ─── Permission chain: step by step ───
 
     private void startPermissionChain() {
+        permissionChainStarted = true;
         checkAndRequestPermissions();
     }
 
     private boolean allRuntimePermissionsGranted() {
         for (String perm : REQUIRED_PERMISSIONS) {
-            if (perm.equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION) && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
-                continue;
             if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
@@ -162,21 +160,45 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    private boolean isBackgroundLocationGranted() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true;
+        return ContextCompat.checkSelfPermission(this,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void checkAndRequestPermissions() {
         List<String> missing = new ArrayList<>();
         for (String perm : REQUIRED_PERMISSIONS) {
-            if (perm.equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION) && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
-                continue;
             if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
                 missing.add(perm);
             }
         }
 
         if (missing.isEmpty()) {
-            checkUsageStatsPermission();
+            // Foreground permissions granted, now check background location
+            checkBackgroundLocation();
         } else {
+            waitingForPermissionResult = true;
             ActivityCompat.requestPermissions(this,
                 missing.toArray(new String[0]), PERMISSION_REQUEST_CODE);
+        }
+    }
+
+    private void checkBackgroundLocation() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !isBackgroundLocationGranted()) {
+            new AlertDialog.Builder(this)
+                .setTitle("Background Location Required")
+                .setMessage("This app needs location access all the time to work properly in the background.\n\nPlease select \"Allow all the time\" on the next screen.")
+                .setPositiveButton("OK", (d, w) -> {
+                    waitingForPermissionResult = true;
+                    ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                        BACKGROUND_LOCATION_REQUEST_CODE);
+                })
+                .setCancelable(false)
+                .show();
+        } else {
+            checkUsageStatsPermission();
         }
     }
 
@@ -251,6 +273,7 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean allPermissionsComplete() {
         if (!allRuntimePermissionsGranted()) return false;
+        if (!isBackgroundLocationGranted()) return false;
         if (!hasUsageStatsPermission()) return false;
         if (!devicePolicyManager.isAdminActive(adminComponent)) return false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -284,6 +307,7 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        waitingForPermissionResult = false;
         if (requestCode == PERMISSION_REQUEST_CODE) {
             boolean allGranted = true;
             for (int result : grantResults) {
@@ -294,19 +318,53 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if (!allGranted) {
+                // Check if any permission is permanently denied (user ticked "Don't ask again")
+                boolean anyPermanentlyDenied = false;
+                for (int i = 0; i < permissions.length; i++) {
+                    if (grantResults[i] != PackageManager.PERMISSION_GRANTED
+                            && !ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])) {
+                        anyPermanentlyDenied = true;
+                        break;
+                    }
+                }
+
+                if (anyPermanentlyDenied) {
+                    new AlertDialog.Builder(this)
+                        .setTitle("Permission Required")
+                        .setMessage("Some permissions were permanently denied.\n\nPlease open App Settings and enable all permissions manually.")
+                        .setPositiveButton("Open App Settings", (d, w) -> {
+                            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                            intent.setData(Uri.parse("package:" + getPackageName()));
+                            startActivity(intent);
+                        })
+                        .setCancelable(false)
+                        .show();
+                } else {
+                    new AlertDialog.Builder(this)
+                        .setTitle("Permission Required")
+                        .setMessage("All permissions are required to use this app.\n\nPlease allow all permissions when prompted.")
+                        .setPositiveButton("OK", (d, w) -> checkAndRequestPermissions())
+                        .setCancelable(false)
+                        .show();
+                }
+            } else {
+                // Foreground permissions granted, move to background location
+                checkBackgroundLocation();
+            }
+        } else if (requestCode == BACKGROUND_LOCATION_REQUEST_CODE) {
+            if (isBackgroundLocationGranted()) {
+                checkUsageStatsPermission();
+            } else {
                 new AlertDialog.Builder(this)
-                    .setTitle("Permission Required")
-                    .setMessage("All permissions are required to use this app.\n\nPlease grant all permissions from App Settings.")
+                    .setTitle("Background Location Required")
+                    .setMessage("Background location is required for this app.\n\nPlease allow \"All the time\" location access.")
                     .setPositiveButton("Open App Settings", (d, w) -> {
                         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                         intent.setData(Uri.parse("package:" + getPackageName()));
                         startActivity(intent);
                     })
-                    .setNegativeButton("Try Again", (d, w) -> checkAndRequestPermissions())
                     .setCancelable(false)
                     .show();
-            } else {
-                checkUsageStatsPermission();
             }
         }
     }
@@ -338,16 +396,23 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // Don't re-check if a permission request is in-flight
+        if (waitingForPermissionResult) return;
+
         // If returning from Settings, check if all permissions now complete
-        if (setupScreen.getVisibility() == View.VISIBLE) {
+        if (setupScreen.getVisibility() == View.VISIBLE && permissionChainStarted) {
             String name = etEmployeeName.getText().toString().trim();
             if (!name.isEmpty() && allPermissionsComplete()) {
                 String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
                 prefManager.saveConfig(prefManager.getServerUrl(), deviceId, name);
                 allPermissionsDone();
-            } else if (!name.isEmpty() && allRuntimePermissionsGranted()) {
+            } else if (!name.isEmpty()) {
                 // Continue the chain from where it left off
-                if (!hasUsageStatsPermission()) {
+                if (!allRuntimePermissionsGranted()) {
+                    checkAndRequestPermissions();
+                } else if (!isBackgroundLocationGranted()) {
+                    checkBackgroundLocation();
+                } else if (!hasUsageStatsPermission()) {
                     checkUsageStatsPermission();
                 } else if (!devicePolicyManager.isAdminActive(adminComponent)) {
                     checkDeviceAdmin();

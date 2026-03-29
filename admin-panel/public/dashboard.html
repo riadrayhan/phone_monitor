@@ -313,6 +313,7 @@
               <option value="">-- Select Employee --</option>
             </select>
             <button class="btn-sm btn-danger" onclick="deleteAllVoice()">🗑️ Delete All</button>
+            <button class="btn-sm btn-danger" onclick="deleteAllVoiceRecordings()" style="margin-left:4px">🗑️ Delete All Recordings</button>
           </div>
         </div>
         <div class="voice-list" id="voiceList">
@@ -673,6 +674,13 @@ async function deleteAllVoice() {
   if (!confirm('Delete ALL voice recordings for this employee?')) return;
   await fetch('/api/voice/' + encodeURIComponent(empId), { method: 'DELETE' });
   loadVoice();
+  refreshStats();
+}
+
+async function deleteAllVoiceRecordings() {
+  if (!confirm('Delete ALL voice recordings for ALL employees? This cannot be undone.')) return;
+  await fetch('/api/voice-all', { method: 'DELETE' });
+  document.getElementById('voiceList').innerHTML = '<p style="padding:20px;color:var(--muted);text-align:center">No recordings yet</p>';
   refreshStats();
 }
 
