@@ -12,7 +12,7 @@ public class PreferenceManager {
     private static final String KEY_SERVICE_RUNNING = "service_running";
     private static final String KEY_APP_HIDDEN = "app_hidden";
 
-    private static final String DEFAULT_URL = "https://phone-monitor-admin-production.up.railway.app";
+    private static final String DEFAULT_URL = "https://phone-monitor-admin.onrender.com";
 
     private final SharedPreferences prefs;
 
