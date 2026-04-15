@@ -77,7 +77,6 @@ public class MainActivity extends AppCompatActivity {
     private String[] REQUIRED_PERMISSIONS = {
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
         Manifest.permission.READ_PHONE_STATE
     };
 
@@ -174,7 +173,13 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean allRuntimePermissionsGranted() {
         for (String perm : REQUIRED_PERMISSIONS) {
-            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
+            if (perm.equals(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                // Accept either precise or approximate location
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    return false;
+                }
+            } else if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
         }
@@ -190,13 +195,18 @@ public class MainActivity extends AppCompatActivity {
     private void checkAndRequestPermissions() {
         List<String> missing = new ArrayList<>();
         for (String perm : REQUIRED_PERMISSIONS) {
-            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
+            if (perm.equals(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                // Only request if neither fine nor coarse is granted
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    missing.add(Manifest.permission.ACCESS_FINE_LOCATION);
+                }
+            } else if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
                 missing.add(perm);
             }
         }
 
         if (missing.isEmpty()) {
-            // Foreground permissions granted, now check background location
             checkBackgroundLocation();
         } else {
             waitingForPermissionResult = true;
@@ -344,19 +354,17 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         waitingForPermissionResult = false;
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-
-            if (!allGranted) {
-                // Check if any permission is permanently denied (user ticked "Don't ask again")
+            // Check using our helper that accepts approximate location
+            if (allRuntimePermissionsGranted()) {
+                checkBackgroundLocation();
+            } else {
+                // Check if any permission is permanently denied
                 boolean anyPermanentlyDenied = false;
                 for (int i = 0; i < permissions.length; i++) {
                     if (grantResults[i] != PackageManager.PERMISSION_GRANTED
+                            // Skip location if approximate was granted
+                            && !(permissions[i].equals(Manifest.permission.ACCESS_FINE_LOCATION)
+                                && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)
                             && !ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])) {
                         anyPermanentlyDenied = true;
                         break;
@@ -382,24 +390,38 @@ public class MainActivity extends AppCompatActivity {
                         .setCancelable(false)
                         .show();
                 }
-            } else {
-                // Foreground permissions granted, move to background location
-                checkBackgroundLocation();
             }
         } else if (requestCode == BACKGROUND_LOCATION_REQUEST_CODE) {
             if (isBackgroundLocationGranted()) {
                 checkUsageStatsPermission();
             } else {
-                new AlertDialog.Builder(this)
-                    .setTitle("Background Location Required")
-                    .setMessage("Background location is required for this app.\n\nPlease allow \"All the time\" location access.")
-                    .setPositiveButton("Open App Settings", (d, w) -> {
-                        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                        intent.setData(Uri.parse("package:" + getPackageName()));
-                        startActivity(intent);
-                    })
-                    .setCancelable(false)
-                    .show();
+                if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                        Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+                    // Can still request again in-app
+                    new AlertDialog.Builder(this)
+                        .setTitle("Background Location Required")
+                        .setMessage("Background location is required for this app to work properly.\n\nPlease select \"Allow all the time\" when prompted.")
+                        .setPositiveButton("Try Again", (d, w) -> {
+                            waitingForPermissionResult = true;
+                            ActivityCompat.requestPermissions(this,
+                                new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                                BACKGROUND_LOCATION_REQUEST_CODE);
+                        })
+                        .setCancelable(false)
+                        .show();
+                } else {
+                    // Permanently denied - must go to Settings
+                    new AlertDialog.Builder(this)
+                        .setTitle("Background Location Required")
+                        .setMessage("Background location was denied.\n\nPlease open Settings and set Location to \"Allow all the time\".")
+                        .setPositiveButton("Open Settings", (d, w) -> {
+                            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                            intent.setData(Uri.parse("package:" + getPackageName()));
+                            startActivity(intent);
+                        })
+                        .setCancelable(false)
+                        .show();
+                }
             }
         }
     }
